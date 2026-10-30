@@ -23,6 +23,7 @@ function renderSet(set, { idx = 0, total = 1, startNo = 1, showSource = false } 
   const qs = items.map((it, n) => `
     <div class="q" role="radiogroup" aria-labelledby="stem-${esc(it.id)}">
       <span class="qno">${a + n}.</span>
+      <button type="button" class="flag" data-item="${esc(it.id)}" aria-pressed="false" title="標註這題的答案不確定，之後再回來檢查">不確定</button>
       <div class="stem hl-zone" id="stem-${esc(it.id)}">${chars(it.stem, it.id + "_stem")}</div>
       <div class="opts cols-${optionCols(it)}">
         ${(it.options || []).map((o, k) => `<label class="opt"><input class="vh" type="radio" name="${esc(it.id)}" value="${KEYS[k]}"><span class="k">(${KEYS[k]})</span><span class="ot">${esc(o)}</span></label>`).join("")}

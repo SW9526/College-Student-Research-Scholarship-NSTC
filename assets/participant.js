@@ -1,20 +1,10 @@
-/* 受試者版：知情同意 → 裝置檢查 → 背景問卷 → 作答說明 → 每個題組（作答頁＋心力量表）→ 完成 */
+/* 受試者版：知情同意 → 裝置檢查 → 背景問卷 → 作答說明 → 題組（可自由切換）＋心力量表 → 交卷確認 → 完成 */
 (async () => {
   const CFG = window.APP_CONFIG;
   const pid = Math.random().toString(36).slice(2, 12);
   const pending = [];                       // 尚未確認送達的上傳
   const copyLog = [];
   const send = (fn, ...args) => { const p = fn(...args).catch(e => ({ failed: true, fn, args, e })); pending.push(p); return p; };
-
-  /* ---------- 進度條 ---------- */
-  const progress = { done: 0, total: 1 };
-  const setProgress = done => {
-    progress.done = done;
-    const pct = Math.round(100 * done / progress.total);
-    document.getElementById("progressFill").style.width = pct + "%";
-    document.getElementById("progressLbl").textContent = `填答進度 ${pct}%`;
-    document.getElementById("progress").setAttribute("aria-valuenow", pct);
-  };
 
   /* ---------- 載入題目、分派題本 ---------- */
   let sets, booklet;
@@ -27,7 +17,6 @@
     document.getElementById("app").innerHTML = `<div class="panel"><h2>目前無法開始作答</h2><p>題目載入失敗，請稍後重新整理頁面；若持續發生，請聯絡研究人員。</p><p class="muted">${esc(e.message)}</p></div>`;
     return;
   }
-  progress.total = 3 + sets.length * 2;
 
   /* ---------- 監測：複製、離開視窗、全螢幕 ---------- */
   const monitor = { ended: false };
@@ -53,12 +42,57 @@
   document.addEventListener("visibilitychange", () => document.hidden ? leaveStart("hidden") : leaveEnd());
   document.addEventListener("fullscreenchange", () => { away.lastFs = performance.now(); if (away.active && !document.fullscreenElement) away.fsExits++; });
 
-  const jsPsych = initJsPsych({
-    display_element: "app",
-    // 題組相關的頁面會重複出現，進度改由 refreshProgress 依已送出的題組數計算
-    on_trial_finish: data => { if (["consent", "background", "instructions"].includes(data.task)) setProgress(progress.done + 1); },
-    on_finish: () => finish()
+  /* ---------- 題組狀態 ----------
+     每個題組的作答、不確定標註、畫記、離開紀錄跨次保留。時間一律是「停留在這個題組的累計時間」：
+     rt_ms＝所有進入次數的停留時間總和；log 裡的 t、離開的 at_ms 也都以累計時間計。
+     切換題組只是換頁，不會觸發 blur／visibilitychange，也不在題組頁以外計算離開。 */
+  const store = sets.map(() => ({
+    responses: {}, flags: {}, ansLog: [], flagLog: [], hlLog: [], runs: [], leaves: [], fsExits: 0,
+    visits: [], activeMs: 0, firstRtMs: null, effort: null, effortRtMs: null, uploaded: false
+  }));
+  // cur：要顯示的題組，-1＝交卷確認頁；go／focus：點圓圈或題號時要去的題組與題目
+  const exam = { started: false, cur: 0, go: null, focus: null, effortFor: null, after: null, queue: [], done: false, t0: 0, seq: 0 };
+  const nItems = k => sets[k].items.length;
+  const nAnswered = k => sets[k].items.filter(it => store[k].responses[it.id] != null).length;
+  const nFlagged = k => sets[k].items.filter(it => store[k].flags[it.id]).length;
+
+  /* ---------- 上方進度圓圈：每個階段、每個題組各一個；作答期間可點題組圓圈切換 ---------- */
+  const steps = [
+    { key: "consent", label: "同意" }, { key: "background", label: "背景" }, { key: "instructions", label: "說明" },
+    ...sets.map((_, k) => ({ key: "set", k, label: `題組 ${k + 1}` })),
+    { key: "review", label: "交卷" }
+  ];
+  let stage = "consent", navigate = null;          // navigate(k)：目前頁面提供的切換方式；null＝不可切換
+  const stepIndex = () => stage === "set" ? 3 + exam.cur : stage === "effort" ? 3 + exam.effortFor : steps.findIndex(s => s.key === stage);
+  const drawSteps = () => {
+    const at = stepIndex();
+    document.getElementById("steps").innerHTML = steps.map((s, n) => {
+      const cls = ["step"], cur = n === at;
+      let mark = n < at || exam.started ? "✓" : "";      // 前三個階段：完成打勾；題組圓圈顯示題組編號
+      if (s.key === "set") {
+        const a = nAnswered(s.k), f = nFlagged(s.k);
+        mark = String(s.k + 1);
+        cls.push(f ? "flagged" : a === nItems(s.k) ? "complete" : a ? "partial" : "todo");
+      } else if (s.key === "review") mark = "交";
+      else cls.push(n < at || exam.started ? "done" : "todo");
+      if (cur) cls.push("current");
+      const can = navigate && !cur && (s.key === "set" || s.key === "review");
+      const title = s.key === "set" ? `${s.label}：已作答 ${nAnswered(s.k)} / ${nItems(s.k)} 題${nFlagged(s.k) ? `，${nFlagged(s.k)} 題標註不確定` : ""}` : s.label;
+      const dot = can
+        ? `<button type="button" class="dot" data-n="${n}" title="${esc(title)}" aria-label="${esc(title)}">${mark}</button>`
+        : `<span class="dot" title="${esc(title)}"${cur ? ' aria-current="step"' : ""}>${mark}</span>`;
+      return `<li class="${cls.join(" ")}">${dot}<span class="lbl">${esc(s.label)}</span></li>`;
+    }).join("");
+  };
+  document.getElementById("steps").addEventListener("click", e => {
+    const b = e.target.closest("button.dot");
+    if (!b || !navigate) return;
+    const s = steps[Number(b.dataset.n)];
+    navigate(s.key === "set" ? s.k : -1, null);
   });
+  const enterStage = st => { stage = st; navigate = null; drawSteps(); };
+
+  const jsPsych = initJsPsych({ display_element: "app", on_finish: () => finish() });
   const tStart = performance.now();
 
   /* ---------- 1. 知情同意 ---------- */
@@ -77,6 +111,7 @@
     </div>`,
     html: `<div class="panel"><label><input type="checkbox" name="consent" value="yes" required> 我已閱讀上述說明，同意參與本研究。</label></div>`,
     button_label: "同意並繼續",
+    on_load: () => enterStage("consent"),
     data: { task: "consent" }
   };
 
@@ -96,18 +131,33 @@
 
   /* ---------- 3. 背景問卷 ---------- */
   const radios = (name, opts) => `<div class="opts">${opts.map(o => `<label><input type="radio" name="${name}" value="${o}" required> ${o}</label>`).join("")}</div>`;
+  const YEARS = [...[110, 111, 112, 113, 114, 115].map(y => `${y}學年度`), "其他"];
   const background = {
     type: jsPsychSurveyHtmlForm,
+    // 學測年度可複選：勾選框不設 name，選到的年度以「、」串起來放進隱藏欄位 exam_year
     html: `<div class="panel">
       <h2>背景資料</h2>
-      <div class="field"><span class="q">1. 你參加學測的年度</span>
-        <select name="exam_year" required><option value="">請選擇</option>${[110, 111, 112, 113, 114, 115].map(y => `<option>${y}學年度</option>`).join("")}<option>其他</option></select></div>
+      <div class="field"><span class="q">1. 你參加學測的年度（可複選）</span>
+        <div class="opts" id="yearOpts">${YEARS.map(y => `<label><input type="checkbox" value="${y}"> ${y}</label>`).join("")}</div>
+        <input type="hidden" name="exam_year" value=""></div>
       <div class="field"><span class="q">2. 你是否曾重考或再次參加學測？</span>${radios("retake", ["是", "否"])}</div>
       <div class="field"><span class="q">3. 你是否看過114或115學年度學測國文的試題或解析（例如補習班教材、網路解析）？</span>${radios("seen_items", ["是", "否", "不確定"])}</div>
       <div class="field"><span class="q">4. 你是否擔任過國文家教或相關備課工作？</span>${radios("tutor", ["是", "否"])}</div>
     </div>`,
     button_label: "下一步",
     data: { task: "background" },
+    on_load: () => {
+      enterStage("background");
+      const boxes = [...document.querySelectorAll("#yearOpts input")];
+      const hidden = document.querySelector("input[name=exam_year]");
+      const sync = () => {
+        const picked = boxes.filter(b => b.checked).map(b => b.value);
+        hidden.value = picked.join("、");
+        boxes[0].setCustomValidity(picked.length ? "" : "請至少勾選一個年度");
+      };
+      boxes.forEach(b => b.addEventListener("change", sync));
+      sync();
+    },
     on_finish: data => send(API.start, {
       pid, booklet, ...data.response,
       user_agent: navigator.userAgent, screen: `${screen.width}x${screen.height}`
@@ -120,46 +170,38 @@
     stimulus: `<div class="panel">
       <h2>作答說明</h2>
       <ul class="tight">
-        <li>每個題組有一篇文章與數道單選題。文章和題幹可以畫重點：按住滑鼠拖曳選取文字，放開後就會標上螢光；切換到「橡皮擦」再拖曳一次即可擦掉。</li>
-        <li>不確定答案的題目可以留空，直接送出也沒有關係。</li>
-        <li>每個題組作答完畢後，會請你評定剛才花了多少心力，用 1 到 9 分表示。</li>
-        <li>送出的題組之後仍可以用上方的「題組」按鈕回去檢查或修改答案；全部題組完成後，按「結束作答」才會交卷。</li>
+        <li>每個題組有一篇文章與數道單選題。<strong>文章和題幹可以畫重點：按住滑鼠拖曳選取文字，放開後就會標上螢光；切換到「橡皮擦」再拖曳一次即可擦掉。</strong></li>
+        <li>沒把握的題目可以按題目右側的「不確定」做記號，之後再回來檢查；不確定答案的題目也可以留空。</li>
+        <li>按「暫存答案」會保存這個題組並前往下一個題組。上方的圓圈代表各個題組，隨時可以點圓圈切換到任何一個題組，答案和螢光都會保留。</li>
+        <li>每個題組第一次按「暫存答案」後，會請你評定剛才花了多少心力，用 1 到 9 分表示。</li>
+        <li>全部作答完，到最後的「交卷」頁確認答案，按「結束作答」才會交卷。</li>
         <li>按下「開始作答」後畫面會切換為全螢幕。請盡量不要退出全螢幕或切換到其他視窗。</li>
       </ul></div>`,
     choices: ["開始作答"],
     on_load: () => {
+      enterStage("instructions");
       const b = document.querySelector(".jspsych-btn");
       if (b) b.addEventListener("click", () => {
         try { const p = document.documentElement.requestFullscreen?.(); if (p) p.catch(() => {}); } catch (e) {}
       }, { capture: true });
     },
-    on_finish: () => { exam.t0 = performance.now(); },      // visits 的 start_ms 以開始作答為 0
+    on_finish: () => { exam.t0 = performance.now(); exam.started = true; },   // visits 的 start_ms 以開始作答為 0
     data: { task: "instructions" }
   };
 
-  /* ---------- 5. 題組頁：送出後仍可回到前面的題組 ----------
-     每個題組的作答、畫記、離開紀錄跨次保留。時間一律是「停留在這個題組的累計時間」：
-     rt_ms＝所有進入次數的停留時間總和；log 裡的 t、離開的 at_ms 也都以累計時間計。
-     切換題組只是換頁，不會觸發 blur／visibilitychange，也不在題組頁以外計算離開。 */
-  const store = sets.map(() => ({
-    responses: {}, ansLog: [], hlLog: [], runs: [], leaves: [], fsExits: 0,
-    visits: [], activeMs: 0, firstRtMs: null, effort: null, effortRtMs: null, submitted: false
-  }));
-  const exam = { cur: 0, go: null, effortFor: null, done: false, t0: 0 };
-  const firstOpen = () => store.findIndex(s => !s.submitted);   // -1＝全部題組都送出過
-  const canVisit = k => firstOpen() < 0 || k <= firstOpen();
-  const refreshProgress = () => setProgress(3 + 2 * store.filter(s => s.submitted).length - (exam.effortFor != null ? 1 : 0));
-
-  // 每次上傳的是該題組的完整現況；後端以 n_visits 判斷新舊，同一題組只留最新一列
+  /* ---------- 5. 題組頁 ---------- */
+  // 每次上傳的是該題組的完整現況；save_seq 逐次遞增，後端只保留最新的一筆（同一題組一列）
   const upload = i => {
     const s = store[i], set = sets[i];
+    s.uploaded = true;
     const row = {
-      pid, booklet, set_id: set.set_id, set_order: i + 1,
+      pid, booklet, set_id: set.set_id, set_order: i + 1, save_seq: ++exam.seq,
       rt_ms: Math.round(s.activeMs), first_rt_ms: s.firstRtMs,
       n_visits: s.visits.length, visits: s.visits,
       n_items: set.items.length,
       n_blank: set.items.filter(it => s.responses[it.id] == null).length,
-      responses: s.responses,
+      responses: Object.fromEntries(set.items.map(it => [it.id, s.responses[it.id] ?? null])),
+      flags: set.items.filter(it => s.flags[it.id]).map(it => it.id), flag_log: s.flagLog,
       first_answer_ms: Object.fromEntries(set.items.map(it => [it.id, (s.ansLog.find(a => a.item === it.id) || {}).t ?? null])),
       highlights: s.runs, highlight_log: s.hlLog, answer_log: s.ansLog,
       leaves: s.leaves, n_leaves: s.leaves.length,
@@ -174,11 +216,12 @@
   const setPage = {
     type: jsPsychSurveyHtmlForm,
     html: () => renderSet(sets[exam.cur], { idx: exam.cur, total: sets.length, startNo: startNoFor(sets[exam.cur], sets), showSource: CFG.SHOW_SOURCE_NOTE }),
-    button_label: () => store[exam.cur].submitted ? "儲存並繼續" : "送出這個題組",
+    button_label: "暫存答案",
     data: { task: "item_set" },
     on_load: () => {
       const i = exam.cur, s = store[i], set = sets[i];
-      exam.go = null;
+      const focus = exam.focus;
+      exam.go = null; exam.focus = null;
       const start = performance.now();
       const t0 = start - s.activeMs;                         // performance.now() - t0 ＝ 在這個題組的累計時間
       Object.assign(away, { active: true, open: null, leaves: s.leaves, fsExits: s.fsExits, t0 });
@@ -188,70 +231,74 @@
         const v = s.responses[it.id];
         const r = v && [...screenEl.querySelectorAll("input[type=radio]")].find(x => x.name === it.id && x.value === v);
         if (r) r.checked = true;                             // 程式設定不會觸發 change，不會寫進 answer_log
+        const f = screenEl.querySelector(`.flag[data-item="${CSS.escape(it.id)}"]`);
+        if (f) f.setAttribute("aria-pressed", String(!!s.flags[it.id]));
       });
       const st = attachHighlighter(screenEl, t0, s);
       visit = { i, start, st };
-
-      // 題組切換按鈕：已送出過的題組與目前進行到的題組可以進入
-      if (sets.length > 1) {
-        const nav = document.createElement("div");
-        nav.className = "tools setnav";
-        nav.setAttribute("role", "group");
-        nav.setAttribute("aria-label", "切換題組");
-        nav.innerHTML = sets.map((x, k) => `<button type="button" class="tool" data-k="${k}"${k === i ? ' aria-current="true"' : ""}${k === i || !canVisit(k) ? " disabled" : ""}>題組 ${k + 1}${store[k].submitted ? " ✓" : ""}</button>`).join("");
-        nav.addEventListener("click", e => {
-          const b = e.target.closest("button[data-k]");
-          if (!b || b.disabled) return;
-          exam.go = Number(b.dataset.k);
-          form.requestSubmit();
-        });
-        screenEl.querySelector(".taskbar .where").replaceWith(nav);
-      }
 
       const counter = document.createElement("p");
       counter.className = "answered";
       form.querySelector("input[type=submit]").before(counter);
       const update = () => {
-        const n = set.items.filter(it => screenEl.querySelector(`input[name="${it.id}"]:checked`)).length;
-        counter.textContent = `已作答 ${n} / ${set.items.length} 題` + (n < set.items.length ? "（未作答的題目可以留空送出）" : "");
+        const n = nAnswered(i), f = nFlagged(i);
+        counter.textContent = `已作答 ${n} / ${set.items.length} 題` + (f ? `，${f} 題標註不確定` : "") + (n < set.items.length ? "（未作答的題目可以留空）" : "");
+        drawSteps();
       };
-      update();
       screenEl.addEventListener("change", e => {
-        if (e.target.type === "radio") s.ansLog.push({ t: Math.round(performance.now() - t0), item: e.target.name, value: e.target.value });
+        if (e.target.type !== "radio") return;
+        s.responses[e.target.name] = e.target.value;
+        s.ansLog.push({ t: Math.round(performance.now() - t0), item: e.target.name, value: e.target.value });
         update();
       });
+      screenEl.addEventListener("click", e => {
+        const f = e.target.closest(".flag");
+        if (!f) return;
+        const on = f.getAttribute("aria-pressed") !== "true";
+        f.setAttribute("aria-pressed", String(on));
+        s.flags[f.dataset.item] = on;
+        s.flagLog.push({ t: Math.round(performance.now() - t0), item: f.dataset.item, on });
+        update();
+      });
+
+      // 點上方圓圈切換題組：照常送出表單，答案與時間都會先存好
+      stage = "set";
+      navigate = (k, item) => { exam.go = k; exam.focus = item; form.requestSubmit(); };
+      update();
+      const target = focus && screenEl.querySelector(`#stem-${CSS.escape(focus)}`);
+      if (target) target.closest(".q").scrollIntoView({ block: "center" }); else window.scrollTo(0, 0);
     },
     on_finish: data => {
       const { i, start, st } = visit, s = store[i], set = sets[i];
+      navigate = null;
       leaveEnd(); away.active = false;
       const end = performance.now();
       s.activeMs += end - start;
-      s.visits.push({ start_ms: Math.round(start - exam.t0), duration_ms: Math.round(end - start), via: exam.go == null ? "submit" : "nav" });
+      s.visits.push({ start_ms: Math.round(start - exam.t0), duration_ms: Math.round(end - start), via: exam.go == null ? "save" : "nav" });
       s.fsExits = away.fsExits;
       s.runs = st.runs;
       // 受試者端沒有正確答案，只記錄作答；留空記為 null。計分在管理者頁依目前的答案進行
       set.items.forEach(it => { s.responses[it.id] = data.response[it.id] ?? null; });
       data.set_id = set.set_id;
-      data.via = exam.go == null ? "submit" : "nav";
+      data.via = exam.go == null ? "save" : "nav";
 
-      if (exam.go == null && !s.submitted) {
-        // 第一次送出：心力量表對應的是到這裡為止的累計時間
-        s.submitted = true;
-        s.firstRtMs = Math.round(s.activeMs);
-        exam.effortFor = i;
+      const next = exam.go ?? (i + 1 < sets.length ? i + 1 : -1);   // 「暫存答案」前往下一個題組；最後一個則到交卷頁
+      if (exam.go == null && s.effort == null) {
+        // 第一次按「暫存答案」：先評心力，first_rt_ms 是評分當下的累計時間
+        exam.effortFor = i; exam.after = next;
       } else {
-        if (s.submitted) upload(i);                          // 回來修改過的題組，離開時更新資料
-        exam.cur = exam.go ?? firstOpen();                   // 「儲存並繼續」回到目前進行到的題組；都完成則到總覽頁
+        upload(i);
+        exam.cur = next;
       }
-      refreshProgress();
     }
   };
 
-  /* ---------- 6. 心力耗費量表（只在題組第一次送出後出現）---------- */
+  /* ---------- 6. 心力耗費量表（題組第一次暫存時；交卷時補問還沒評過的題組）---------- */
   const effortPage = {
     type: jsPsychSurveyHtmlForm,
-    html: `<div class="panel">
-      <h2>我覺得我需要耗費多少心力回答剛剛的測驗問題？</h2>
+    html: () => `<div class="panel">
+      <p class="muted">題組 ${exam.effortFor + 1}</p>
+      <h2>我覺得我需要耗費多少心力回答${exam.queue.length || exam.after === "finish" ? `題組 ${exam.effortFor + 1} ` : "剛剛"}的測驗問題？</h2>
       <div class="scale" role="radiogroup" aria-label="心力耗費，1到9分">
         ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(v => `<label><input type="radio" name="effort" value="${v}" required>${v}</label>`).join("")}
       </div>
@@ -259,41 +306,76 @@
     </div>`,
     button_label: "下一步",
     data: { task: "effort" },
+    on_load: () => enterStage("effort"),
     on_finish: data => {
-      const i = exam.effortFor;
-      Object.assign(store[i], { effort: Number(data.response.effort), effortRtMs: data.rt });
+      const i = exam.effortFor, s = store[i];
+      Object.assign(s, { effort: Number(data.response.effort), effortRtMs: data.rt, firstRtMs: Math.round(s.activeMs) });
       data.set_id = sets[i].set_id;
-      exam.effortFor = null;
       upload(i);
-      exam.cur = firstOpen();
-      refreshProgress();
+      if (exam.after === "finish") {
+        exam.effortFor = exam.queue.shift() ?? null;
+        if (exam.effortFor == null) exam.done = true;
+      } else {
+        exam.cur = exam.after;
+        exam.effortFor = null;
+      }
     }
   };
 
-  /* ---------- 6b. 全部送出後的總覽：可回去檢查，按「結束作答」才交卷 ---------- */
+  /* ---------- 7. 交卷確認：答案一覽，點題號回到該題 ---------- */
   const reviewPage = {
-    type: jsPsychHtmlButtonResponse,
-    stimulus: () => `<div class="panel">
-      <h2>所有題組都已作答</h2>
-      <p>你可以回到任何一個題組檢查或修改答案。確認沒問題後，按「結束作答」交卷；交卷後就不能再修改。</p>
-      <ul class="tight">${sets.map((set, k) => {
-        const n = set.items.filter(it => store[k].responses[it.id] != null).length;
-        return `<li>題組 ${k + 1}：已作答 ${n} / ${set.items.length} 題</li>`;
-      }).join("")}</ul></div>`,
-    choices: () => [...sets.map((_, k) => `回到題組 ${k + 1}`), "結束作答"],
+    type: jsPsychSurveyHtmlForm,
+    html: () => {
+      let no = 0, total = 0, answered = 0, flagged = 0;
+      const groups = sets.map((set, k) => `<div class="sheet-row"><span class="sheet-set">題組 ${k + 1}</span>${set.items.map(it => {
+        no++; total++;
+        const v = store[k].responses[it.id], f = store[k].flags[it.id];
+        if (v != null) answered++;
+        if (f) flagged++;
+        const state = v != null ? "answered" : "blank";
+        return `<button type="button" class="cell ${state}${f ? " flagged" : ""}" data-k="${k}" data-item="${esc(it.id)}" title="第 ${no} 題${f ? "（標註不確定）" : ""}"><span class="no">${no}</span><span class="v">${v ?? "—"}</span></button>`;
+      }).join("")}</div>`).join("");
+      return `<div class="panel">
+        <h2>交卷前確認</h2>
+        <p>已作答 <b>${answered}</b> / ${total} 題${total - answered ? `，<b>${total - answered}</b> 題未作答` : ""}${flagged ? `，<b>${flagged}</b> 題標註不確定` : ""}。點下方的題號可以回到那一題；確認沒問題後，按「結束作答」交卷，交卷後就不能再修改。</p>
+        <div class="sheet">${groups}</div>
+        <p class="legend"><span class="cell answered"></span>已作答 <span class="cell blank"></span>未作答 <span class="cell flagged"></span>標註不確定</p>
+      </div>`;
+    },
+    button_label: "結束作答",
     data: { task: "review" },
+    on_load: () => {
+      const form = document.querySelector("#jspsych-survey-html-form");
+      stage = "review";
+      navigate = (k, item) => { exam.go = k; exam.focus = item; form.requestSubmit(); };
+      drawSteps();
+      exam.go = null;
+      form.querySelector(".sheet").addEventListener("click", e => {
+        const c = e.target.closest(".cell[data-k]");
+        if (c) navigate(Number(c.dataset.k), c.dataset.item);
+      });
+    },
     on_finish: data => {
-      if (data.response === sets.length) exam.done = true;
-      else exam.cur = data.response;
+      navigate = null;
+      if (exam.go != null && exam.go >= 0) { data.go = exam.go; exam.cur = exam.go; return; }
+      if (exam.go === -1) return;                            // 在交卷頁點「交卷」圓圈：留在這頁
+      // 結束作答：進過但還沒評心力的題組補問，然後交卷
+      exam.queue = store.map((s, k) => k).filter(k => store[k].visits.length && store[k].effort == null);
+      exam.after = "finish";
+      exam.effortFor = exam.queue.shift() ?? null;
+      if (exam.effortFor == null) exam.done = true;
     }
   };
 
-  /* ---------- 7. 完成 ---------- */
+  /* ---------- 8. 完成 ---------- */
   async function finish() {
     monitor.ended = true;
+    navigate = null;
+    stage = "review"; drawSteps();
     try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (e) {}
     const app = document.getElementById("app");
     app.innerHTML = `<div class="panel"><h1>正在儲存作答資料…</h1><p class="muted">請先不要關閉這個頁面。</p></div>`;
+    store.forEach((s, k) => { if (!s.uploaded) upload(k); });   // 沒進去過的題組也留一列（全部留空），試題分析才會算到
     send(API.complete, pid, { total_ms: Math.round(performance.now() - tStart), copy_attempts: copyLog.length });
     // 失敗的上傳再重試一次
     const results = await Promise.all(pending);
@@ -310,14 +392,15 @@
   }
 
   /* ---------- 組合流程 ---------- */
-  // exam.cur：要顯示的題組；-1＝總覽頁。每一輪依狀態決定顯示題組頁、心力量表或總覽頁
+  // 每一輪依狀態決定顯示題組頁、心力量表或交卷頁
   const examLoop = {
     timeline: [
-      { timeline: [setPage], conditional_function: () => exam.cur >= 0 && exam.effortFor == null },
-      { timeline: [effortPage], conditional_function: () => exam.effortFor != null },
-      { timeline: [reviewPage], conditional_function: () => exam.cur < 0 && exam.effortFor == null }
+      { timeline: [setPage], conditional_function: () => !exam.done && exam.effortFor == null && exam.cur >= 0 },
+      { timeline: [effortPage], conditional_function: () => !exam.done && exam.effortFor != null },
+      { timeline: [reviewPage], conditional_function: () => !exam.done && exam.effortFor == null && exam.cur < 0 }
     ],
     loop_function: () => !exam.done
   };
+  drawSteps();
   jsPsych.run([consent, deviceBlock, background, instructions, examLoop]);
 })();

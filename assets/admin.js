@@ -83,6 +83,10 @@ function renderPreview() {
     const idx = Math.max(0, inBk.indexOf(set));
     $("#preview").innerHTML = renderSet(set, { idx, total: inBk.length || 1, startNo: inBk.includes(set) ? startNoFor(set, inBk) : 1, showSource: true });
     attachHighlighter($("#preview .set-screen"));
+    $("#preview .set-screen").addEventListener("click", e => {
+      const f = e.target.closest(".flag");
+      if (f) f.setAttribute("aria-pressed", String(f.getAttribute("aria-pressed") !== "true"));
+    });
     fitPreview();
   }, 120);
 }
@@ -91,7 +95,7 @@ function fitPreview() {
   const paper = $("#preview .paper");
   if (!paper) return;
   const base = APP_CONFIG.EXAM_FONT_PX || 17;
-  const natural = 48.5 * base + 2;                       // 版心 42.5em + 左右邊界 6em + 邊框
+  const natural = 49.7 * base + 2;                       // 版心 42.5em + 左右邊界 7.2em + 邊框
   const avail = $("#preview").clientWidth - 28;          // 扣掉預覽框內距
   const scale = Math.min(1, avail / natural);
   paper.style.fontSize = (base * scale).toFixed(2) + "px";
@@ -228,11 +232,12 @@ const pct = x => x == null || isNaN(x) ? "—" : x.toFixed(2);
 
 function analyse() {
   const { sets, sessions, responses } = S.data;
-  // 每位受試者每個題組只取一筆：n_visits 最多（最新）的那筆，相同時取後面的
+  // 每位受試者每個題組只取一筆：save_seq 最大（最新）的那筆（舊資料沒有 save_seq 時看 n_visits），相同時取後面的
   const byKey = new Map();
+  const newer = (r, o) => (Number(r.save_seq) || 0) - (Number(o.save_seq) || 0) || (Number(r.n_visits) || 0) - (Number(o.n_visits) || 0);
   responses.forEach(r => {
     const k = r.pid + "|" + r.set_id, o = byKey.get(k);
-    if (!o || (Number(r.n_visits) || 0) >= (Number(o.n_visits) || 0)) byKey.set(k, r);
+    if (!o || newer(r, o) >= 0) byKey.set(k, r);
   });
   const resp = [...byKey.values()];
   // 依目前題目的正確答案計分（答案修正後會自動重算）
@@ -277,7 +282,7 @@ function analyse() {
       const pOf = ids => { const a = rr.filter(r => ids.has(r.pid)); return a.length ? a.filter(r => (r.responses || {})[it.id] === it.answer).length / a.length : null; };
       const D = g ? pOf(hi) - pOf(lo) : null;
       const dist = Object.fromEntries(KEYS.map(k => [k, N ? ans.filter(a => a === k).length / N : null]));
-      rows.push({ booklet: set.booklet, set_id: set.set_id, no: n + 1, item_id: it.id, answer: it.answer, N, P, D, blank: N ? ans.filter(a => a === null).length / N : null, dist, meanEff, meanRt, active: set.active !== false });
+      rows.push({ booklet: set.booklet, set_id: set.set_id, no: n + 1, item_id: it.id, answer: it.answer, N, P, D, blank: N ? ans.filter(a => a === null).length / N : null, flagged: N ? rr.filter(r => (r.flags || []).includes(it.id)).length / N : null, dist, meanEff, meanRt, active: set.active !== false });
     });
   });
   return { people, included, rows, resp };
@@ -311,10 +316,10 @@ function renderData() {
     <h2>試題分析</h2>
     <p class="muted">答對率＝答對人數 ÷ 作答人數（留空算答錯）；鑑別度＝題本總分前 27% 與後 27% 的答對率差，納入人數少於 4 人時不計算。</p>
     <div class="tablebox"><table>
-      <thead><tr><th>題本</th><th>題組</th><th>題號</th><th>答案</th><th>人數</th><th>答對率 P</th><th>鑑別度 D</th><th>留空率</th>${KEYS.map(k => `<th>選 ${k}</th>`).join("")}<th>題組平均心力</th><th>題組平均作答（秒）</th></tr></thead>
+      <thead><tr><th>題本</th><th>題組</th><th>題號</th><th>答案</th><th>人數</th><th>答對率 P</th><th>鑑別度 D</th><th>留空率</th><th>標註不確定率</th>${KEYS.map(k => `<th>選 ${k}</th>`).join("")}<th>題組平均心力</th><th>題組平均作答（秒）</th></tr></thead>
       <tbody>${A.rows.map(r => `<tr${r.active ? "" : ' class="excluded"'}><td>${esc(r.booklet)}</td><td>${esc(r.set_id)}</td><td class="n">${r.no}</td><td>${r.answer}</td><td class="n">${r.N}</td>
-        <td class="n">${pct(r.P)}</td><td class="n${r.D != null && r.D < 0.2 ? " low" : ""}">${pct(r.D)}</td><td class="n">${pct(r.blank)}</td>
-        ${KEYS.map(k => `<td class="n">${pct(r.dist[k])}</td>`).join("")}<td class="n">${r.meanEff == null ? "—" : r.meanEff.toFixed(2)}</td><td class="n">${sec(r.meanRt)}</td></tr>`).join("") || `<tr><td colspan="14" class="muted">還沒有題目。</td></tr>`}</tbody>
+        <td class="n">${pct(r.P)}</td><td class="n${r.D != null && r.D < 0.2 ? " low" : ""}">${pct(r.D)}</td><td class="n">${pct(r.blank)}</td><td class="n">${pct(r.flagged)}</td>
+        ${KEYS.map(k => `<td class="n">${pct(r.dist[k])}</td>`).join("")}<td class="n">${r.meanEff == null ? "—" : r.meanEff.toFixed(2)}</td><td class="n">${sec(r.meanRt)}</td></tr>`).join("") || `<tr><td colspan="15" class="muted">還沒有題目。</td></tr>`}</tbody>
     </table></div>
     <h2>受試者</h2>
     <div class="tablebox"><table>
@@ -329,15 +334,15 @@ function renderData() {
   $("#fAwaySec").addEventListener("change", e => { F.maxAwaySec = Number(e.target.value) || 0; renderData(); });
   $("#fSeen").addEventListener("change", e => { F.useSeen = e.target.checked; renderData(); });
   $("#csvItems").addEventListener("click", () => download("試題分析.csv",
-    [["題本", "題組", "題號", "題目代碼", "正確答案", "人數", "答對率P", "鑑別度D", "留空率", ...KEYS.map(k => "選" + k), "題組平均心力", "題組平均作答秒數"],
-     ...A.rows.map(r => [r.booklet, r.set_id, r.no, r.item_id, r.answer, r.N, r.P, r.D, r.blank, ...KEYS.map(k => r.dist[k]), r.meanEff, r.meanRt == null ? "" : r.meanRt / 1000])]));
+    [["題本", "題組", "題號", "題目代碼", "正確答案", "人數", "答對率P", "鑑別度D", "留空率", "標註不確定率", ...KEYS.map(k => "選" + k), "題組平均心力", "題組平均作答秒數"],
+     ...A.rows.map(r => [r.booklet, r.set_id, r.no, r.item_id, r.answer, r.N, r.P, r.D, r.blank, r.flagged, ...KEYS.map(k => r.dist[k]), r.meanEff, r.meanRt == null ? "" : r.meanRt / 1000])]));
   $("#csvLong").addEventListener("click", () => {
     const setMap = Object.fromEntries(S.data.sets.map(s => [s.set_id, s]));
-    const out = [["受試者", "題本", "題組", "題組順序", "題目代碼", "作答", "正確答案", "答對", "首次作答毫秒", "題組作答毫秒（累計）", "首次送出前作答毫秒", "進入題組次數", "心力耗費", "心力作答毫秒", "離開次數", "離開毫秒", "退出全螢幕", "畫記段數", "納入分析"]];
+    const out = [["受試者", "題本", "題組", "題組順序", "題目代碼", "作答", "標註不確定", "正確答案", "答對", "首次作答毫秒", "題組作答毫秒（累計）", "首次送出前作答毫秒", "進入題組次數", "心力耗費", "心力作答毫秒", "離開次數", "離開毫秒", "退出全螢幕", "畫記段數", "納入分析"]];
     const inc = new Set(A.included.map(p => p.pid));
     A.resp.forEach(r => (setMap[r.set_id]?.items || Object.keys(r.responses || {}).map(id => ({ id }))).forEach(it => {
       const a = (r.responses || {})[it.id] ?? "";
-      out.push([r.pid, r.booklet, r.set_id, r.set_order, it.id, a, it.answer ?? "", (r.correct || {})[it.id] ? 1 : 0, (r.first_answer_ms || {})[it.id] ?? "", r.rt_ms, r.first_rt_ms ?? r.rt_ms, r.n_visits || 1, r.effort, r.effort_rt_ms, r.n_leaves, r.leave_ms, r.n_fullscreen_exits, (r.highlights || []).length, inc.has(r.pid) ? 1 : 0]);
+      out.push([r.pid, r.booklet, r.set_id, r.set_order, it.id, a, (r.flags || []).includes(it.id) ? 1 : 0, it.answer ?? "", (r.correct || {})[it.id] ? 1 : 0, (r.first_answer_ms || {})[it.id] ?? "", r.rt_ms, r.first_rt_ms ?? r.rt_ms, r.n_visits || 1, r.effort, r.effort_rt_ms, r.n_leaves, r.leave_ms, r.n_fullscreen_exits, (r.highlights || []).length, inc.has(r.pid) ? 1 : 0]);
     }));
     download("作答資料.csv", out);
   });

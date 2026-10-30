@@ -3,6 +3,7 @@
   --bg:#f3f5f7; --surface:#ffffff; --ink:#1d2731; --muted:#5d6b78; --line:#d5dde5;
   --accent:#1f5f7a; --accent-ink:#ffffff; --accent-soft:#e1eef4;
   --mark:#fde68a; --mark-ink:#1d2731; --warn:#9b3d12; --ok:#1d6b45; --bad:#b42318;
+  --flag:#c26a00; --flag-ink:#ffffff; --flag-soft:#fdf0dc;
   --f-read:"Noto Serif TC","Songti TC","PMingLiU",serif;
   --f-ui:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
   --f-num:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
@@ -11,11 +12,13 @@
   --bg:#12181e; --surface:#1a222a; --ink:#e4ebf1; --muted:#9aa9b6; --line:#2c3843;
   --accent:#7cc0dc; --accent-ink:#0e1a20; --accent-soft:#1d3440;
   --mark:#a1802a; --mark-ink:#fff8e1; --warn:#f0a07a; --ok:#7fd1a6; --bad:#f29b90; color-scheme:dark;
+  --flag:#e9a23b; --flag-ink:#1d1405; --flag-soft:#3a2c14;
 }}
 :root[data-theme="dark"]{
   --bg:#12181e; --surface:#1a222a; --ink:#e4ebf1; --muted:#9aa9b6; --line:#2c3843;
   --accent:#7cc0dc; --accent-ink:#0e1a20; --accent-soft:#1d3440;
   --mark:#a1802a; --mark-ink:#fff8e1; --warn:#f0a07a; --ok:#7fd1a6; --bad:#f29b90; color-scheme:dark;
+  --flag:#e9a23b; --flag-ink:#1d1405; --flag-soft:#3a2c14;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -53,10 +56,39 @@ textarea{resize:vertical;line-height:1.7}
 #jspsych-html-button-response-btngroup,.jspsych-html-button-response-btngroup{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:14px}
 .answered{justify-self:center;font-size:.88rem;color:var(--muted);font-variant-numeric:tabular-nums;margin-bottom:-8px}
 
-.progress{max-width:1180px;margin:0 auto 16px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center}
-.progress .lbl{font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-.progress .track{height:8px;border-radius:999px;background:var(--line);overflow:hidden}
-.progress .fill{height:100%;width:0;background:var(--accent);border-radius:inherit;transition:width .3s ease}
+/* 進度圓圈：每個階段、每個題組各一個。題組圓圈依作答狀態上色，標註不確定的題組為琥珀色 */
+.progress{max-width:1180px;margin:0 auto 16px}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:4px 0}
+.step{position:relative;display:grid;justify-items:center;gap:2px;min-width:58px}
+.step+.step::before{content:"";position:absolute;top:15px;right:calc(50% + 17px);width:calc(100% - 34px);height:2px;background:var(--line)}
+.step .dot{box-sizing:border-box;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:inherit;font-size:.82rem;font-weight:500;
+  font-variant-numeric:tabular-nums;border:2px solid var(--line);background:var(--surface);color:var(--muted);padding:0;line-height:1}
+.step .lbl{font-size:.72rem;color:var(--muted);white-space:nowrap}
+.step.done .dot{border-color:var(--accent);color:var(--accent)}
+.step.partial .dot{border-color:var(--accent);color:var(--accent);background:linear-gradient(to top,var(--accent-soft) 50%,var(--surface) 50%)}
+.step.complete .dot{border-color:var(--accent);background:var(--accent);color:var(--accent-ink)}
+.step.flagged .dot{border-color:var(--flag);background:var(--flag);color:var(--flag-ink)}
+.step.current .dot{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--ink)}
+.step.current .lbl{color:var(--ink);font-weight:700}
+button.dot{cursor:pointer}
+button.dot:hover{border-color:var(--ink)}
+button.dot:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+/* 交卷確認：答案一覽，點題號回到該題 */
+.sheet{display:grid;gap:8px}
+.sheet-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.sheet-set{font-size:.85rem;color:var(--muted);min-width:4.5em}
+.cell{box-sizing:border-box;display:inline-grid;grid-template-columns:auto auto;align-items:baseline;gap:4px;min-width:3.4em;padding:3px 8px;border-radius:6px;
+  border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:.88rem;font-variant-numeric:tabular-nums}
+button.cell{cursor:pointer}
+button.cell:hover{border-color:var(--ink)}
+.cell .no{color:var(--muted);font-size:.78rem}
+.cell .v{font-weight:700}
+.cell.answered{border-color:var(--accent);background:var(--accent-soft)}
+.cell.blank .v{color:var(--muted);font-weight:400}
+.cell.flagged{border-color:var(--flag);box-shadow:inset 0 0 0 1px var(--flag);background:var(--flag-soft)}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:.82rem;color:var(--muted)}
+.legend .cell{min-width:1.4em;height:1.1em;padding:0;margin-right:-8px;vertical-align:middle}
 
 /* test screen (shared by participant + admin preview) */
 .set-screen{container-type:inline-size}
@@ -66,13 +98,11 @@ textarea{resize:vertical;line-height:1.7}
 .tools{display:flex;gap:6px;flex-wrap:wrap}
 .tool{font:inherit;font-size:.88rem;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:3px 12px;cursor:pointer}
 .tool[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:500}
-.setnav .tool[aria-current="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:500;opacity:1}
-.setnav .tool:disabled:not([aria-current]){opacity:.45;cursor:not-allowed}
 .tool .sw{display:inline-block;width:.9em;height:.9em;border-radius:2px;background:var(--mark);vertical-align:-1px;margin-right:4px}
 /* 試題本「紙張」：尺寸以 em 表示，比例取自學測國綜試題本（A4、內文 11pt、行距約 17pt、版心約 42.5 字寬） */
 .paper{--paper:#ffffff;--paper-ink:#111111;--paper-line:#cfd6dd;--sel:#e3eef6;--sel-ink:#0b4a6b;
   background:var(--paper);color:var(--paper-ink);border:1px solid var(--line);border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.08);
-  max-width:calc(42.5em + 6em);margin:0 auto;padding:2.2em 3em 2.6em;
+  max-width:calc(42.5em + 7.2em);margin:0 auto;padding:2.2em 4.2em 2.6em 3em;   /* 右邊界加寬 1.2em 放「不確定」鈕，版心寬度不變 */
   font-family:"Times New Roman","DFKai-SB","BiauKai","標楷體","TW-Kai","LXGW WenKai TC","Kaiti TC",serif;line-height:1.55;text-align:justify}
 .paper .src{font-family:var(--f-ui);font-size:.75em;color:var(--warn);margin-bottom:.6em}
 .paper .grp{margin:0 0 .15em}
@@ -82,6 +112,13 @@ textarea{resize:vertical;line-height:1.7}
 .paper .empty{color:#8a96a3;font-family:var(--f-ui);font-size:.85em;text-indent:0}
 .paper .q{position:relative;padding-left:1.67em;margin-top:.15em}
 .paper .qno{position:absolute;left:0;top:0}
+.paper .q .flag{position:absolute;top:.05em;left:100%;margin-left:.4em;font-family:var(--f-ui);font-size:.64em;line-height:1.5;white-space:nowrap;
+  border:1px solid #b9c3cc;border-radius:999px;background:#fff;color:#5d6b78;padding:0 .7em;cursor:pointer}
+.paper .q .flag::before{content:"⚑ "}
+.paper .q .flag:hover{border-color:#c26a00;color:#c26a00}
+.paper .q .flag[aria-pressed="true"]{background:#c26a00;border-color:#c26a00;color:#fff;font-weight:500}
+.paper .q .flag:focus-visible{outline:2px solid #1f5f7a;outline-offset:2px}
+@container (max-width:560px){.paper .q .flag{position:static;margin:.2em 0}}
 .paper .stem{margin:0}
 .paper .opts{display:grid;gap:0 1em}
 .paper .opts.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -99,7 +136,7 @@ textarea{resize:vertical;line-height:1.7}
 @media (max-width:700px){.paper{padding:1.4em 1.2em 1.8em}}
 .hl-zone{user-select:text;-webkit-user-select:text}
 .ch.hl{background:var(--mark);color:var(--mark-ink)}
-.set-screen .taskbar{max-width:calc(42.5em*17/15 + 6em*17/15);margin-left:auto;margin-right:auto}
+.set-screen .taskbar{max-width:calc(42.5em*17/15 + 7.2em*17/15);margin-left:auto;margin-right:auto}
 
 /* effort scale */
 .scale{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px}
