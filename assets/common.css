@@ -46,6 +46,8 @@ ul.tight{margin:0;padding-left:1.2em;display:grid;gap:4px}
 #app{max-width:1180px;margin:0 auto}
 .jspsych-content-wrapper,.jspsych-content{width:100%}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:24px;display:grid;gap:14px;max-width:720px;margin:0 auto}
+.panel.wide{max-width:840px}                         /* 作答說明：加寬，避免最後一行只剩一個字加句號 */
+.panel p,.panel li{text-wrap:pretty}
 .field{display:grid;gap:6px}
 .field>.q{font-weight:500}
 .opts{display:flex;flex-wrap:wrap;gap:6px 18px}

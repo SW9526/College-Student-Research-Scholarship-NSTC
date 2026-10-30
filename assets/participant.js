@@ -167,7 +167,7 @@
   /* ---------- 4. 作答說明＋全螢幕 ---------- */
   const instructions = {
     type: jsPsychHtmlButtonResponse,
-    stimulus: `<div class="panel">
+    stimulus: `<div class="panel wide">
       <h2>作答說明</h2>
       <ul class="tight">
         <li>每個題組有一篇文章與數道單選題。<strong>文章和題幹可以畫重點：按住滑鼠拖曳選取文字，放開後就會標上螢光；切換到「橡皮擦」再拖曳一次即可擦掉。</strong></li>
@@ -337,7 +337,7 @@
       }).join("")}</div>`).join("");
       return `<div class="panel">
         <h2>交卷前確認</h2>
-        <p>已作答 <b>${answered}</b> / ${total} 題${total - answered ? `，<b>${total - answered}</b> 題未作答` : ""}${flagged ? `，<b>${flagged}</b> 題標註不確定` : ""}。點下方的題號可以回到那一題；確認沒問題後，按「結束作答」交卷，交卷後就不能再修改。</p>
+        <p>已作答 <b>${answered}</b> / ${total} 題${total - answered ? `，<b>${total - answered}</b> 題未作答` : ""}${flagged ? `，<b>${flagged}</b> 題標註不確定` : ""}。<b>點下方的題號可以回到那一題</b>；確認沒問題後，按「結束作答」交卷，交卷後就不能再修改。</p>
         <div class="sheet">${groups}</div>
         <p class="legend"><span class="cell answered"></span>已作答 <span class="cell blank"></span>未作答 <span class="cell flagged"></span>標註不確定</p>
       </div>`;
