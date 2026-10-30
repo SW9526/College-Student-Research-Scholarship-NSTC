@@ -21,8 +21,9 @@ const SHEETS = {
   },
   Responses: {
     cols: ["timestamp", "pid", "booklet", "set_id", "set_order", "rt_ms", "n_items", "n_blank", "effort", "effort_rt_ms",
-      "n_leaves", "leave_ms", "n_fullscreen_exits", "responses", "first_answer_ms", "highlights", "answer_log", "highlight_log", "leaves"],
-    json: ["responses", "first_answer_ms", "highlights", "answer_log", "highlight_log", "leaves"]
+      "n_leaves", "leave_ms", "n_fullscreen_exits", "responses", "first_answer_ms", "highlights", "answer_log", "highlight_log", "leaves",
+      "first_rt_ms", "n_visits", "visits"],
+    json: ["responses", "first_answer_ms", "highlights", "answer_log", "highlight_log", "leaves", "visits"]
   }
 };
 
@@ -70,7 +71,7 @@ function doPost(e) {
         appendRow("Sessions", Object.assign({}, body.session, { started_at: new Date(), status: "started" }));
         return out({ ok: true });
       case "submitSet":
-        appendRow("Responses", Object.assign({}, body.row, { timestamp: new Date() }));
+        upsertResponse(Object.assign({}, body.row, { timestamp: new Date() }));
         return out({ ok: true });
       case "complete":
         updateSession(body.pid, Object.assign({}, body.patch, { status: "completed", completed_at: new Date() }));
@@ -145,6 +146,22 @@ function toCell(name, c, v) {
 function appendRow(name, obj) {
   const def = SHEETS[name];
   sheet(name).appendRow(def.cols.map(c => toCell(name, c, obj[c])));
+}
+/* 同一受試者同一題組只留一列：回到前面題組修改後覆蓋原列；n_visits 較少（較舊）的資料不會蓋掉較新的 */
+function upsertResponse(obj) {
+  const sh = sheet("Responses"), cols = SHEETS.Responses.cols;
+  const last = sh.getLastRow();
+  if (last >= 2) {
+    const col = c => sh.getRange(2, cols.indexOf(c) + 1, last - 1, 1).getValues().map(r => r[0]);
+    const pids = col("pid"), setIds = col("set_id"), visits = col("n_visits");
+    for (let r = pids.length - 1; r >= 0; r--) {
+      if (String(pids[r]) !== String(obj.pid) || String(setIds[r]) !== String(obj.set_id)) continue;
+      if ((Number(visits[r]) || 0) > (Number(obj.n_visits) || 0)) return;
+      sh.getRange(r + 2, 1, 1, cols.length).setValues([cols.map(c => toCell("Responses", c, obj[c]))]);
+      return;
+    }
+  }
+  appendRow("Responses", obj);
 }
 function updateSession(pid, patch) {
   const sh = sheet("Sessions"), cols = SHEETS.Sessions.cols;
