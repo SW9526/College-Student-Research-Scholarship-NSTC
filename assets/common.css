@@ -66,6 +66,8 @@ textarea{resize:vertical;line-height:1.7}
 .tools{display:flex;gap:6px;flex-wrap:wrap}
 .tool{font:inherit;font-size:.88rem;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:3px 12px;cursor:pointer}
 .tool[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:500}
+.setnav .tool[aria-current="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:500;opacity:1}
+.setnav .tool:disabled:not([aria-current]){opacity:.45;cursor:not-allowed}
 .tool .sw{display:inline-block;width:.9em;height:.9em;border-radius:2px;background:var(--mark);vertical-align:-1px;margin-right:4px}
 /* 試題本「紙張」：尺寸以 em 表示，比例取自學測國綜試題本（A4、內文 11pt、行距約 17pt、版心約 42.5 字寬） */
 .paper{--paper:#ffffff;--paper-ink:#111111;--paper-line:#cfd6dd;--sel:#e3eef6;--sel-ink:#0b4a6b;

@@ -228,9 +228,12 @@ const pct = x => x == null || isNaN(x) ? "—" : x.toFixed(2);
 
 function analyse() {
   const { sets, sessions, responses } = S.data;
-  // 每位受試者每個題組只取最後一筆
+  // 每位受試者每個題組只取一筆：n_visits 最多（最新）的那筆，相同時取後面的
   const byKey = new Map();
-  responses.forEach(r => byKey.set(r.pid + "|" + r.set_id, r));
+  responses.forEach(r => {
+    const k = r.pid + "|" + r.set_id, o = byKey.get(k);
+    if (!o || (Number(r.n_visits) || 0) >= (Number(o.n_visits) || 0)) byKey.set(k, r);
+  });
   const resp = [...byKey.values()];
   // 依目前題目的正確答案計分（答案修正後會自動重算）
   const setMap = Object.fromEntries(sets.map(s => [s.set_id, s]));
@@ -330,11 +333,11 @@ function renderData() {
      ...A.rows.map(r => [r.booklet, r.set_id, r.no, r.item_id, r.answer, r.N, r.P, r.D, r.blank, ...KEYS.map(k => r.dist[k]), r.meanEff, r.meanRt == null ? "" : r.meanRt / 1000])]));
   $("#csvLong").addEventListener("click", () => {
     const setMap = Object.fromEntries(S.data.sets.map(s => [s.set_id, s]));
-    const out = [["受試者", "題本", "題組", "題組順序", "題目代碼", "作答", "正確答案", "答對", "首次作答毫秒", "題組作答毫秒", "心力耗費", "心力作答毫秒", "離開次數", "離開毫秒", "退出全螢幕", "畫記段數", "納入分析"]];
+    const out = [["受試者", "題本", "題組", "題組順序", "題目代碼", "作答", "正確答案", "答對", "首次作答毫秒", "題組作答毫秒（累計）", "首次送出前作答毫秒", "進入題組次數", "心力耗費", "心力作答毫秒", "離開次數", "離開毫秒", "退出全螢幕", "畫記段數", "納入分析"]];
     const inc = new Set(A.included.map(p => p.pid));
     A.resp.forEach(r => (setMap[r.set_id]?.items || Object.keys(r.responses || {}).map(id => ({ id }))).forEach(it => {
       const a = (r.responses || {})[it.id] ?? "";
-      out.push([r.pid, r.booklet, r.set_id, r.set_order, it.id, a, it.answer ?? "", (r.correct || {})[it.id] ? 1 : 0, (r.first_answer_ms || {})[it.id] ?? "", r.rt_ms, r.effort, r.effort_rt_ms, r.n_leaves, r.leave_ms, r.n_fullscreen_exits, (r.highlights || []).length, inc.has(r.pid) ? 1 : 0]);
+      out.push([r.pid, r.booklet, r.set_id, r.set_order, it.id, a, it.answer ?? "", (r.correct || {})[it.id] ? 1 : 0, (r.first_answer_ms || {})[it.id] ?? "", r.rt_ms, r.first_rt_ms ?? r.rt_ms, r.n_visits || 1, r.effort, r.effort_rt_ms, r.n_leaves, r.leave_ms, r.n_fullscreen_exits, (r.highlights || []).length, inc.has(r.pid) ? 1 : 0]);
     }));
     download("作答資料.csv", out);
   });

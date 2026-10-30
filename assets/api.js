@@ -77,7 +77,13 @@ const API = (() => {
       await post({ action: "start", session });
     },
     async submitSet(row) {
-      if (demo) { const a = LS.get(K.responses, []); a.push({ ...row, timestamp: now() }); LS.set(K.responses, a); return; }
+      if (demo) {
+        // 與後端相同：同一受試者同一題組只留一筆，較舊的資料不覆蓋較新的
+        const a = LS.get(K.responses, []), k = a.findIndex(x => x.pid === row.pid && x.set_id === row.set_id);
+        if (k >= 0 && (a[k].n_visits || 0) > (row.n_visits || 0)) return;
+        if (k >= 0) a[k] = { ...row, timestamp: now() }; else a.push({ ...row, timestamp: now() });
+        LS.set(K.responses, a); return;
+      }
       await post({ action: "submitSet", row });
     },
     async complete(pid, patch) {

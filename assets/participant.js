@@ -55,7 +55,8 @@
 
   const jsPsych = initJsPsych({
     display_element: "app",
-    on_trial_finish: data => { if (data.task !== "device_block") setProgress(progress.done + 1); },
+    // 題組相關的頁面會重複出現，進度改由 refreshProgress 依已送出的題組數計算
+    on_trial_finish: data => { if (["consent", "background", "instructions"].includes(data.task)) setProgress(progress.done + 1); },
     on_finish: () => finish()
   });
   const tStart = performance.now();
@@ -122,6 +123,7 @@
         <li>每個題組有一篇文章與數道單選題。文章和題幹可以畫重點：按住滑鼠拖曳選取文字，放開後就會標上螢光；切換到「橡皮擦」再拖曳一次即可擦掉。</li>
         <li>不確定答案的題目可以留空，直接送出也沒有關係。</li>
         <li>每個題組作答完畢後，會請你評定剛才花了多少心力，用 1 到 9 分表示。</li>
+        <li>送出的題組之後仍可以用上方的「題組」按鈕回去檢查或修改答案；全部題組完成後，按「結束作答」才會交卷。</li>
         <li>按下「開始作答」後畫面會切換為全螢幕。請盡量不要退出全螢幕或切換到其他視窗。</li>
       </ul></div>`,
     choices: ["開始作答"],
@@ -131,58 +133,122 @@
         try { const p = document.documentElement.requestFullscreen?.(); if (p) p.catch(() => {}); } catch (e) {}
       }, { capture: true });
     },
+    on_finish: () => { exam.t0 = performance.now(); },      // visits 的 start_ms 以開始作答為 0
     data: { task: "instructions" }
   };
 
-  /* ---------- 5. 題組頁 ---------- */
-  let lastSet = null;
-  const setPage = (set, idx) => ({
+  /* ---------- 5. 題組頁：送出後仍可回到前面的題組 ----------
+     每個題組的作答、畫記、離開紀錄跨次保留。時間一律是「停留在這個題組的累計時間」：
+     rt_ms＝所有進入次數的停留時間總和；log 裡的 t、離開的 at_ms 也都以累計時間計。
+     切換題組只是換頁，不會觸發 blur／visibilitychange，也不在題組頁以外計算離開。 */
+  const store = sets.map(() => ({
+    responses: {}, ansLog: [], hlLog: [], runs: [], leaves: [], fsExits: 0,
+    visits: [], activeMs: 0, firstRtMs: null, effort: null, effortRtMs: null, submitted: false
+  }));
+  const exam = { cur: 0, go: null, effortFor: null, done: false, t0: 0 };
+  const firstOpen = () => store.findIndex(s => !s.submitted);   // -1＝全部題組都送出過
+  const canVisit = k => firstOpen() < 0 || k <= firstOpen();
+  const refreshProgress = () => setProgress(3 + 2 * store.filter(s => s.submitted).length - (exam.effortFor != null ? 1 : 0));
+
+  // 每次上傳的是該題組的完整現況；後端以 n_visits 判斷新舊，同一題組只留最新一列
+  const upload = i => {
+    const s = store[i], set = sets[i];
+    const row = {
+      pid, booklet, set_id: set.set_id, set_order: i + 1,
+      rt_ms: Math.round(s.activeMs), first_rt_ms: s.firstRtMs,
+      n_visits: s.visits.length, visits: s.visits,
+      n_items: set.items.length,
+      n_blank: set.items.filter(it => s.responses[it.id] == null).length,
+      responses: s.responses,
+      first_answer_ms: Object.fromEntries(set.items.map(it => [it.id, (s.ansLog.find(a => a.item === it.id) || {}).t ?? null])),
+      highlights: s.runs, highlight_log: s.hlLog, answer_log: s.ansLog,
+      leaves: s.leaves, n_leaves: s.leaves.length,
+      leave_ms: s.leaves.reduce((a, l) => a + l.duration_ms, 0),
+      n_fullscreen_exits: s.fsExits,
+      effort: s.effort, effort_rt_ms: s.effortRtMs
+    };
+    send(API.submitSet, JSON.parse(JSON.stringify(row)));   // 存快照，重試時不會送出之後才改的內容
+  };
+
+  let visit = null;
+  const setPage = {
     type: jsPsychSurveyHtmlForm,
-    html: () => renderSet(set, { idx, total: sets.length, startNo: startNoFor(set, sets), showSource: CFG.SHOW_SOURCE_NOTE }),
-    button_label: "送出這個題組",
-    data: { task: "item_set", set_id: set.set_id },
+    html: () => renderSet(sets[exam.cur], { idx: exam.cur, total: sets.length, startNo: startNoFor(sets[exam.cur], sets), showSource: CFG.SHOW_SOURCE_NOTE }),
+    button_label: () => store[exam.cur].submitted ? "儲存並繼續" : "送出這個題組",
+    data: { task: "item_set" },
     on_load: () => {
-      const t0 = performance.now();
-      Object.assign(away, { active: true, open: null, leaves: [], fsExits: 0, t0 });
+      const i = exam.cur, s = store[i], set = sets[i];
+      exam.go = null;
+      const start = performance.now();
+      const t0 = start - s.activeMs;                         // performance.now() - t0 ＝ 在這個題組的累計時間
+      Object.assign(away, { active: true, open: null, leaves: s.leaves, fsExits: s.fsExits, t0 });
       const screenEl = document.querySelector(".set-screen");
-      const st = attachHighlighter(screenEl, t0);
-      st.ansLog = [];
-      window.__st = st;
+      const form = document.querySelector("#jspsych-survey-html-form");
+      set.items.forEach(it => {
+        const v = s.responses[it.id];
+        const r = v && [...screenEl.querySelectorAll("input[type=radio]")].find(x => x.name === it.id && x.value === v);
+        if (r) r.checked = true;                             // 程式設定不會觸發 change，不會寫進 answer_log
+      });
+      const st = attachHighlighter(screenEl, t0, s);
+      visit = { i, start, st };
+
+      // 題組切換按鈕：已送出過的題組與目前進行到的題組可以進入
+      if (sets.length > 1) {
+        const nav = document.createElement("div");
+        nav.className = "tools setnav";
+        nav.setAttribute("role", "group");
+        nav.setAttribute("aria-label", "切換題組");
+        nav.innerHTML = sets.map((x, k) => `<button type="button" class="tool" data-k="${k}"${k === i ? ' aria-current="true"' : ""}${k === i || !canVisit(k) ? " disabled" : ""}>題組 ${k + 1}${store[k].submitted ? " ✓" : ""}</button>`).join("");
+        nav.addEventListener("click", e => {
+          const b = e.target.closest("button[data-k]");
+          if (!b || b.disabled) return;
+          exam.go = Number(b.dataset.k);
+          form.requestSubmit();
+        });
+        screenEl.querySelector(".taskbar .where").replaceWith(nav);
+      }
+
       const counter = document.createElement("p");
       counter.className = "answered";
-      document.querySelector("#jspsych-survey-html-form input[type=submit]").before(counter);
+      form.querySelector("input[type=submit]").before(counter);
       const update = () => {
         const n = set.items.filter(it => screenEl.querySelector(`input[name="${it.id}"]:checked`)).length;
         counter.textContent = `已作答 ${n} / ${set.items.length} 題` + (n < set.items.length ? "（未作答的題目可以留空送出）" : "");
       };
       update();
       screenEl.addEventListener("change", e => {
-        if (e.target.type === "radio") st.ansLog.push({ t: Math.round(performance.now() - t0), item: e.target.name, value: e.target.value });
+        if (e.target.type === "radio") s.ansLog.push({ t: Math.round(performance.now() - t0), item: e.target.name, value: e.target.value });
         update();
       });
     },
     on_finish: data => {
-      const st = window.__st;
+      const { i, start, st } = visit, s = store[i], set = sets[i];
       leaveEnd(); away.active = false;
+      const end = performance.now();
+      s.activeMs += end - start;
+      s.visits.push({ start_ms: Math.round(start - exam.t0), duration_ms: Math.round(end - start), via: exam.go == null ? "submit" : "nav" });
+      s.fsExits = away.fsExits;
+      s.runs = st.runs;
       // 受試者端沒有正確答案，只記錄作答；留空記為 null。計分在管理者頁依目前的答案進行
-      const responses = {};
-      set.items.forEach(it => { responses[it.id] = data.response[it.id] ?? null; });
-      lastSet = {
-        pid, booklet, set_id: set.set_id, set_order: idx + 1, rt_ms: data.rt,
-        n_items: set.items.length,
-        n_blank: Object.values(responses).filter(v => v === null).length,
-        responses,
-        first_answer_ms: Object.fromEntries(set.items.map(it => [it.id, (st.ansLog.find(a => a.item === it.id) || {}).t ?? null])),
-        highlights: st.runs, highlight_log: st.hlLog, answer_log: st.ansLog,
-        leaves: away.leaves.slice(), n_leaves: away.leaves.length,
-        leave_ms: away.leaves.reduce((a, l) => a + l.duration_ms, 0),
-        n_fullscreen_exits: away.fsExits
-      };
-    }
-  });
+      set.items.forEach(it => { s.responses[it.id] = data.response[it.id] ?? null; });
+      data.set_id = set.set_id;
+      data.via = exam.go == null ? "submit" : "nav";
 
-  /* ---------- 6. 心力耗費量表（送出後與題組資料一起上傳）---------- */
-  const effortPage = () => ({
+      if (exam.go == null && !s.submitted) {
+        // 第一次送出：心力量表對應的是到這裡為止的累計時間
+        s.submitted = true;
+        s.firstRtMs = Math.round(s.activeMs);
+        exam.effortFor = i;
+      } else {
+        if (s.submitted) upload(i);                          // 回來修改過的題組，離開時更新資料
+        exam.cur = exam.go ?? firstOpen();                   // 「儲存並繼續」回到目前進行到的題組；都完成則到總覽頁
+      }
+      refreshProgress();
+    }
+  };
+
+  /* ---------- 6. 心力耗費量表（只在題組第一次送出後出現）---------- */
+  const effortPage = {
     type: jsPsychSurveyHtmlForm,
     html: `<div class="panel">
       <h2>我覺得我需要耗費多少心力回答剛剛的測驗問題？</h2>
@@ -194,9 +260,33 @@
     button_label: "下一步",
     data: { task: "effort" },
     on_finish: data => {
-      send(API.submitSet, { ...lastSet, effort: Number(data.response.effort), effort_rt_ms: data.rt });
+      const i = exam.effortFor;
+      Object.assign(store[i], { effort: Number(data.response.effort), effortRtMs: data.rt });
+      data.set_id = sets[i].set_id;
+      exam.effortFor = null;
+      upload(i);
+      exam.cur = firstOpen();
+      refreshProgress();
     }
-  });
+  };
+
+  /* ---------- 6b. 全部送出後的總覽：可回去檢查，按「結束作答」才交卷 ---------- */
+  const reviewPage = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: () => `<div class="panel">
+      <h2>所有題組都已作答</h2>
+      <p>你可以回到任何一個題組檢查或修改答案。確認沒問題後，按「結束作答」交卷；交卷後就不能再修改。</p>
+      <ul class="tight">${sets.map((set, k) => {
+        const n = set.items.filter(it => store[k].responses[it.id] != null).length;
+        return `<li>題組 ${k + 1}：已作答 ${n} / ${set.items.length} 題</li>`;
+      }).join("")}</ul></div>`,
+    choices: () => [...sets.map((_, k) => `回到題組 ${k + 1}`), "結束作答"],
+    data: { task: "review" },
+    on_finish: data => {
+      if (data.response === sets.length) exam.done = true;
+      else exam.cur = data.response;
+    }
+  };
 
   /* ---------- 7. 完成 ---------- */
   async function finish() {
@@ -220,7 +310,14 @@
   }
 
   /* ---------- 組合流程 ---------- */
-  const timeline = [consent, deviceBlock, background, instructions];
-  sets.forEach((set, i) => timeline.push(setPage(set, i), effortPage()));
-  jsPsych.run(timeline);
+  // exam.cur：要顯示的題組；-1＝總覽頁。每一輪依狀態決定顯示題組頁、心力量表或總覽頁
+  const examLoop = {
+    timeline: [
+      { timeline: [setPage], conditional_function: () => exam.cur >= 0 && exam.effortFor == null },
+      { timeline: [effortPage], conditional_function: () => exam.effortFor != null },
+      { timeline: [reviewPage], conditional_function: () => exam.cur < 0 && exam.effortFor == null }
+    ],
+    loop_function: () => !exam.done
+  };
+  jsPsych.run([consent, deviceBlock, background, instructions, examLoop]);
 })();

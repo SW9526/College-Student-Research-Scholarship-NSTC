@@ -47,9 +47,10 @@ function renderSet(set, { idx = 0, total = 1, startNo = 1, showSource = false } 
   </div>`;
 }
 
-/* 畫重點：拖曳選取文字即標記；回傳的 st.runs 隨時是目前的畫記段落 */
-function attachHighlighter(screen, t0 = performance.now()) {
-  const st = { t0, hlLog: [], mode: "pen", runs: [] };
+/* 畫重點：拖曳選取文字即標記；回傳的 st.runs 隨時是目前的畫記段落。
+   prev 是同一題組上次的狀態（回到前面題組時用）：還原畫記，畫記紀錄接在後面 */
+function attachHighlighter(screen, t0 = performance.now(), prev = null) {
+  const st = { t0, hlLog: prev ? prev.hlLog : [], mode: "pen", runs: [] };
   const root = screen.querySelector(".paper");
   const snapshot = () => {
     const runs = []; let cur = null;
@@ -83,6 +84,13 @@ function attachHighlighter(screen, t0 = performance.now()) {
   };
   root.addEventListener("mouseup", apply);
   root.addEventListener("touchend", () => setTimeout(apply, 0));
+  if (prev && prev.runs && prev.runs.length) {
+    root.querySelectorAll(".hl-zone .ch").forEach(s => {
+      const i = +s.dataset.i;
+      if (prev.runs.some(r => r.zone === s.dataset.z && i >= r.start && i <= r.end)) s.classList.add("hl");
+    });
+    snapshot();
+  }
   return st;
 }
 
