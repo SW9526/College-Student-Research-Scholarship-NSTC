@@ -16,7 +16,7 @@ const SHEETS = {
     json: ["passage", "items"]
   },
   Sessions: {
-    cols: ["started_at", "pid", "booklet", "status", "completed_at", "total_ms", "exam_year", "retake", "seen_items", "tutor", "copy_attempts", "user_agent", "screen"],
+    cols: ["started_at", "pid", "booklet", "status", "completed_at", "total_ms", "exam_year", "retake", "seen_items", "tutor", "copy_attempts", "user_agent", "screen", "save_failed"],
     json: []
   },
   Responses: {
