@@ -225,7 +225,7 @@ async function save() {
 }
 
 /* ================= 收集資料 ================= */
-const F = { maxAwaySec: 30, useAway: true, useSeen: true };
+const F = { maxAwaySec: 30, useAway: true, useSeen: true, useSaveFail: true };
 const fmtTime = t => { if (!t) return "—"; const d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleString("zh-TW", { hour12: false }); };
 const sec = ms => ms == null || ms === "" ? "—" : (ms / 1000).toFixed(1);
 const pct = x => x == null || isNaN(x) ? "—" : x.toFixed(2);
@@ -254,6 +254,7 @@ function analyse() {
     const reasons = [];
     if (F.useAway && leaveMs > F.maxAwaySec * 1000) reasons.push(`離開 ${sec(leaveMs)} 秒`);
     if (F.useSeen && s.seen_items === "是") reasons.push("看過試題");
+    if (F.useSaveFail && s.save_failed) reasons.push("部分資料未能儲存");   // 受試者端重試後仍上傳失敗（見 save_failed 欄）
     return {
       ...s, rs, leaveMs, reasons,
       nLeaves: rs.reduce((a, r) => a + (Number(r.n_leaves) || 0), 0),
@@ -311,6 +312,7 @@ function renderData() {
       <strong>排除條件</strong>
       <label class="check"><input type="checkbox" id="fAway" ${F.useAway ? "checked" : ""}> 作答期間累計離開超過 <input type="number" id="fAwaySec" min="0" value="${F.maxAwaySec}"> 秒</label>
       <label class="check"><input type="checkbox" id="fSeen" ${F.useSeen ? "checked" : ""}> 看過114或115學年度試題</label>
+      <label class="check"><input type="checkbox" id="fSaveFail" ${F.useSaveFail ? "checked" : ""}> 部分資料未能儲存</label>
       <span class="muted">只有「已完成」且未被排除的受試者納入試題分析。</span>
     </div>
     <h2>試題分析</h2>
@@ -333,6 +335,7 @@ function renderData() {
   $("#fAway").addEventListener("change", e => { F.useAway = e.target.checked; renderData(); });
   $("#fAwaySec").addEventListener("change", e => { F.maxAwaySec = Number(e.target.value) || 0; renderData(); });
   $("#fSeen").addEventListener("change", e => { F.useSeen = e.target.checked; renderData(); });
+  $("#fSaveFail").addEventListener("change", e => { F.useSaveFail = e.target.checked; renderData(); });
   $("#csvItems").addEventListener("click", () => download("試題分析.csv",
     [["題本", "題組", "題號", "題目代碼", "正確答案", "人數", "答對率P", "鑑別度D", "留空率", "標註不確定率", ...KEYS.map(k => "選" + k), "題組平均心力", "題組平均作答秒數"],
      ...A.rows.map(r => [r.booklet, r.set_id, r.no, r.item_id, r.answer, r.N, r.P, r.D, r.blank, r.flagged, ...KEYS.map(k => r.dist[k]), r.meanEff, r.meanRt == null ? "" : r.meanRt / 1000])]));
@@ -347,8 +350,8 @@ function renderData() {
     download("作答資料.csv", out);
   });
   $("#csvPeople").addEventListener("click", () => download("受試者.csv",
-    [["受試者", "題本", "狀態", "開始時間", "完成時間", "總時間毫秒", "得分", "題數", "學測年度", "重考", "看過試題", "國文家教", "離開次數", "離開毫秒", "退出全螢幕", "複製嘗試", "排除原因", "裝置", "螢幕"],
-     ...A.people.map(p => [p.pid, p.booklet, p.status, p.started_at, p.completed_at, p.total_ms, p.score, p.nItems, p.exam_year, p.retake, p.seen_items, p.tutor, p.nLeaves, p.leaveMs, p.fsExits, p.copy_attempts, p.reasons.join("、"), p.user_agent, p.screen])]));
+    [["受試者", "題本", "狀態", "開始時間", "完成時間", "總時間毫秒", "得分", "題數", "學測年度", "重考", "看過試題", "國文家教", "離開次數", "離開毫秒", "退出全螢幕", "複製嘗試", "排除原因", "未能儲存的資料", "裝置", "螢幕"],
+     ...A.people.map(p => [p.pid, p.booklet, p.status, p.started_at, p.completed_at, p.total_ms, p.score, p.nItems, p.exam_year, p.retake, p.seen_items, p.tutor, p.nLeaves, p.leaveMs, p.fsExits, p.copy_attempts, p.reasons.join("、"), p.save_failed || "", p.user_agent, p.screen])]));
   const rd = $("#resetDemo");
   if (rd) rd.addEventListener("click", () => {
     if (rd.dataset.confirm !== "1") { rd.dataset.confirm = "1"; rd.textContent = "確定清除？再按一次"; return; }

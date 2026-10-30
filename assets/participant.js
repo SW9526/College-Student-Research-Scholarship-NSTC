@@ -1,4 +1,4 @@
-/* 受試者版：知情同意 → 裝置檢查 → 背景問卷 → 作答說明 → 題組（可自由切換）＋心力量表 → 交卷確認 → 完成 */
+/* 受試者版：知情同意 → 裝置檢查 → 背景問卷 → 作答說明 → 題組（第一輪依序作答，每個題組完成後立即填心力量表；之後可自由切換）→ 交卷確認 → 完成 */
 (async () => {
   const CFG = window.APP_CONFIG;
   const pid = Math.random().toString(36).slice(2, 12);
@@ -51,10 +51,15 @@
     visits: [], activeMs: 0, firstRtMs: null, effort: null, effortRtMs: null, uploaded: false
   }));
   // cur：要顯示的題組，-1＝交卷確認頁；go／focus：點圓圈或題號時要去的題組與題目
-  const exam = { started: false, cur: 0, go: null, focus: null, effortFor: null, after: null, queue: [], done: false, t0: 0, seq: 0 };
+  const exam = { started: false, cur: 0, go: null, focus: null, effortFor: null, after: null, done: false, t0: 0, seq: 0, lastSeq: {} };
   const nItems = k => sets[k].items.length;
   const nAnswered = k => sets[k].items.filter(it => store[k].responses[it.id] != null).length;
   const nFlagged = k => sets[k].items.filter(it => store[k].flags[it.id]).length;
+  // 第一輪依序作答：frontier＝第一個還沒評心力的題組（-1＝全部完成）。之前的題組可以回去，後面的題組要等前面完成
+  const frontier = () => store.findIndex(s => s.effort == null);
+  const canGo = k => frontier() < 0 || (k >= 0 && k <= frontier());   // k＝-1 是交卷頁，全部完成後才能去
+  // 「暫存答案」後要去的地方：第一輪中回到還沒完成的題組；全部完成後依序往下，最後一個到交卷頁
+  const nextAfterSave = i => { const f = store.findIndex((s, k) => k !== i && s.effort == null); return f >= 0 ? f : i + 1 < sets.length ? i + 1 : -1; };
 
   /* ---------- 上方進度圓圈：每個階段、每個題組各一個；作答期間可點題組圓圈切換 ---------- */
   const steps = [
@@ -76,7 +81,7 @@
       } else if (s.key === "review") mark = "交";
       else cls.push(n < at || exam.started ? "done" : "todo");
       if (cur) cls.push("current");
-      const can = navigate && !cur && (s.key === "set" || s.key === "review");
+      const can = navigate && !cur && (s.key === "set" ? canGo(s.k) : s.key === "review" && canGo(-1));
       const title = s.key === "set" ? `${s.label}：已作答 ${nAnswered(s.k)} / ${nItems(s.k)} 題${nFlagged(s.k) ? `，${nFlagged(s.k)} 題標註不確定` : ""}` : s.label;
       const dot = can
         ? `<button type="button" class="dot" data-n="${n}" title="${esc(title)}" aria-label="${esc(title)}">${mark}</button>`
@@ -172,9 +177,10 @@
       <ul class="tight">
         <li>每個題組有一篇文章與數道單選題。<strong>文章和題幹可以畫重點：按住滑鼠拖曳選取文字，放開後就會標上螢光；切換到「橡皮擦」再拖曳一次即可擦掉。</strong></li>
         <li>沒把握的題目可以按題目右側的「不確定」做記號，之後再回來檢查；不確定答案的題目也可以留空。</li>
-        <li>按「暫存答案」會保存這個題組並前往下一個題組。上方的圓圈代表各個題組，隨時可以點圓圈切換到任何一個題組，答案和螢光都會保留。</li>
-        <li>每個題組第一次按「暫存答案」後，會請你評定剛才花了多少心力，用 1 到 9 分表示。</li>
-        <li>全部作答完，到最後的「交卷」頁確認答案，按「結束作答」才會交卷。</li>
+        <li>請依序作答。每個題組完成後按「暫存答案」，接著會請你評定剛才花了多少心力（1 到 9 分），再進入下一個題組。</li>
+        <li>上方圓圈代表各個題組：已完成的題組可以點圓圈回去檢查或修改，答案和螢光都會保留。</li>
+        <li>作答到一半點圓圈回到前面的題組時，若這個題組已經作答，也會先請你評定心力。</li>
+        <li>全部題組完成後，可以自由切換檢查，最後在「交卷」頁按「結束作答」才會交卷。</li>
         <li>按下「開始作答」後畫面會切換為全螢幕。請盡量不要退出全螢幕或切換到其他視窗。</li>
       </ul></div>`,
     choices: ["開始作答"],
@@ -195,7 +201,7 @@
     const s = store[i], set = sets[i];
     s.uploaded = true;
     const row = {
-      pid, booklet, set_id: set.set_id, set_order: i + 1, save_seq: ++exam.seq,
+      pid, booklet, set_id: set.set_id, set_order: i + 1, save_seq: (exam.lastSeq[set.set_id] = ++exam.seq),
       rt_ms: Math.round(s.activeMs), first_rt_ms: s.firstRtMs,
       n_visits: s.visits.length, visits: s.visits,
       n_items: set.items.length,
@@ -282,9 +288,10 @@
       data.set_id = set.set_id;
       data.via = exam.go == null ? "save" : "nav";
 
-      const next = exam.go ?? (i + 1 < sets.length ? i + 1 : -1);   // 「暫存答案」前往下一個題組；最後一個則到交卷頁
-      if (exam.go == null && s.effort == null) {
-        // 第一次按「暫存答案」：先評心力，first_rt_ms 是評分當下的累計時間
+      const next = exam.go ?? nextAfterSave(i);
+      // 還沒評心力的題組：按「暫存答案」，或已作答至少一題後點圓圈離開，都立即評心力（first_rt_ms＝評分當下的累計時間）。
+      // 一題都還沒作答就點圓圈回前面的題組，不算完成，之後回來暫存時再評
+      if (s.effort == null && (exam.go == null || nAnswered(i) > 0)) {
         exam.effortFor = i; exam.after = next;
       } else {
         upload(i);
@@ -293,12 +300,12 @@
     }
   };
 
-  /* ---------- 6. 心力耗費量表（題組第一次暫存時；交卷時補問還沒評過的題組）---------- */
+  /* ---------- 6. 心力耗費量表（每個題組完成後立即填寫，只填一次）---------- */
   const effortPage = {
     type: jsPsychSurveyHtmlForm,
     html: () => `<div class="panel">
       <p class="muted">題組 ${exam.effortFor + 1}</p>
-      <h2>我覺得我需要耗費多少心力回答${exam.queue.length || exam.after === "finish" ? `題組 ${exam.effortFor + 1} ` : "剛剛"}的測驗問題？</h2>
+      <h2>我覺得我需要耗費多少心力回答剛剛的測驗問題？</h2>
       <div class="scale" role="radiogroup" aria-label="心力耗費，1到9分">
         ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(v => `<label><input type="radio" name="effort" value="${v}" required>${v}</label>`).join("")}
       </div>
@@ -312,13 +319,8 @@
       Object.assign(s, { effort: Number(data.response.effort), effortRtMs: data.rt, firstRtMs: Math.round(s.activeMs) });
       data.set_id = sets[i].set_id;
       upload(i);
-      if (exam.after === "finish") {
-        exam.effortFor = exam.queue.shift() ?? null;
-        if (exam.effortFor == null) exam.done = true;
-      } else {
-        exam.cur = exam.after;
-        exam.effortFor = null;
-      }
+      exam.cur = exam.after;
+      exam.effortFor = null;
     }
   };
 
@@ -359,11 +361,7 @@
       navigate = null;
       if (exam.go != null && exam.go >= 0) { data.go = exam.go; exam.cur = exam.go; return; }
       if (exam.go === -1) return;                            // 在交卷頁點「交卷」圓圈：留在這頁
-      // 結束作答：進過但還沒評心力的題組補問，然後交卷
-      exam.queue = store.map((s, k) => k).filter(k => store[k].visits.length && store[k].effort == null);
-      exam.after = "finish";
-      exam.effortFor = exam.queue.shift() ?? null;
-      if (exam.effortFor == null) exam.done = true;
+      exam.done = true;                                      // 交卷頁要全部題組完成（都已評心力）才進得來
     }
   };
 
@@ -375,18 +373,21 @@
     try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (e) {}
     const app = document.getElementById("app");
     app.innerHTML = `<div class="panel"><h1>正在儲存作答資料…</h1><p class="muted">請先不要關閉這個頁面。</p></div>`;
-    store.forEach((s, k) => { if (!s.uploaded) upload(k); });   // 沒進去過的題組也留一列（全部留空），試題分析才會算到
-    send(API.complete, pid, { total_ms: Math.round(performance.now() - tStart), copy_attempts: copyLog.length });
-    // 失敗的上傳再重試一次
+    store.forEach((s, k) => { if (!s.uploaded) upload(k); });   // 保險：沒上傳過的題組也留一列
+    // 先等所有上傳完成，失敗的重試一次；仍失敗的記在 Sessions 的 save_failed，管理者頁預設排除這位受試者
     const results = await Promise.all(pending);
     const failed = results.filter(r => r && r.failed);
-    const retry = await Promise.all(failed.map(f => f.fn(...f.args).then(() => true).catch(() => false)));
-    const ok = retry.every(Boolean);
+    const retry = await Promise.all(failed.map(f => f.fn(...f.args).then(() => null).catch(() => f)));
+    // 同一題組只要最後一次上傳成功，資料就是完整的；較早的快照失敗不算
+    const lost = retry.filter(f => f && !(f.fn === API.submitSet && f.args[0].save_seq !== exam.lastSeq[f.args[0].set_id]))
+      .map(f => f.fn === API.submitSet ? "題組 " + f.args[0].set_id : f.fn === API.start ? "背景資料" : "其他");
+    const patch = { total_ms: Math.round(performance.now() - tStart), copy_attempts: copyLog.length, save_failed: lost.join("、") };
+    // 交卷紀錄本身也失敗時，這位受試者會停在「未完成」，同樣不會納入分析
+    await API.complete(pid, patch).catch(() => API.complete(pid, patch)).catch(() => {});
+    // 不向受試者顯示編號；儲存失敗也只顯示一般的完成畫面，由研究者在管理者頁看到排除原因
     app.innerHTML = `<div class="panel">
-      <h1>${ok ? "作答完成，謝謝你的參與" : "作答完成，但部分資料未能儲存"}</h1>
-      ${ok ? "" : "<p>請不要關閉頁面，並聯絡研究人員，告知下方的受試者編碼。</p>"}
+      <h1>作答完成，謝謝你的參與</h1>
       ${CFG.REWARD_FORM_URL ? `<p>請到 <a href="${esc(CFG.REWARD_FORM_URL)}" target="_blank" rel="noopener">酬謝領取表單</a> 填寫聯絡方式（與作答資料分開保存）。</p>` : ""}
-      <p class="muted">受試者編碼：<span style="font-family:var(--f-num)">${pid}</span></p>
       ${API.demo ? '<p class="muted">示範模式：資料存在這台電腦的瀏覽器，可到 <a href="admin.html">管理者頁</a>（密碼 demo）查看。</p>' : ""}
     </div>`;
   }
