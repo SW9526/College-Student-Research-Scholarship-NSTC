@@ -51,10 +51,6 @@ function doGet(e) {
       }));
       return out({ ok: true, sets: sets });
     }
-    if (p.action === "data") {
-      requireAdmin(p.key);
-      return out({ ok: true, sets: readRows("Sets"), sessions: readRows("Sessions"), responses: readRows("Responses") });
-    }
     return out({ ok: true, message: "running" });
   } catch (err) {
     return out({ ok: false, error: String(err.message || err) });
@@ -82,6 +78,10 @@ function doPost(e) {
       case "login":
         requireAdmin(body.key);
         return out({ ok: true });
+      case "data":
+        // 管理者讀取資料改用 POST，密碼不會出現在網址與執行紀錄中
+        requireAdmin(body.key);
+        return out({ ok: true, sets: readRows("Sets"), sessions: readRows("Sessions"), responses: readRows("Responses") });
       case "saveSets":
         requireAdmin(body.key);
         writeSets(body.sets);
