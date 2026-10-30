@@ -81,7 +81,7 @@ function renderPreview() {
     if (!set) { $("#preview").innerHTML = '<p class="muted">選擇或新增一個題組。</p>'; return; }
     const inBk = S.sets.filter(s => s.booklet === set.booklet && s.active !== false).sort((a, b) => (a.order || 0) - (b.order || 0));
     const idx = Math.max(0, inBk.indexOf(set));
-    $("#preview").innerHTML = renderSet(set, { idx, total: inBk.length || 1, startNo: inBk.includes(set) ? startNoFor(set, inBk) : 1, showSource: APP_CONFIG.SHOW_SOURCE_NOTE });
+    $("#preview").innerHTML = renderSet(set, { idx, total: inBk.length || 1, startNo: inBk.includes(set) ? startNoFor(set, inBk) : 1, showSource: true });
     attachHighlighter($("#preview .set-screen"));
     fitPreview();
   }, 120);
@@ -96,7 +96,7 @@ function fitPreview() {
   const scale = Math.min(1, avail / natural);
   paper.style.fontSize = (base * scale).toFixed(2) + "px";
   $("#pvNote").textContent = (scale < 1 ? `已等比例縮小為 ${Math.round(scale * 100)}%，換行位置與受試者畫面相同` : "與受試者畫面相同大小")
-    + (APP_CONFIG.SHOW_SOURCE_NOTE ? "・目前設定會顯示來源說明" : "");
+    + (APP_CONFIG.SHOW_SOURCE_NOTE ? "・受試者也會看到來源說明" : "・來源說明只在這裡顯示，受試者看不到");
 }
 window.addEventListener("resize", () => fitPreview());
 

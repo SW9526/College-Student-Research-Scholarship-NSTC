@@ -13,7 +13,7 @@ window.APP_CONFIG = {
   REWARD_FORM_URL: "",
 
   // 是否在題組上方顯示「來源說明」（正式施測建議改為 false）
-  SHOW_SOURCE_NOTE: true,
+  SHOW_SOURCE_NOTE: false,
 
   // 試題文字大小（px）。版面其他尺寸都依此等比例縮放，維持學測試題本的比例
   EXAM_FONT_PX: 17

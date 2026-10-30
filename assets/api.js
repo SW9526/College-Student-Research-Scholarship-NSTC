@@ -91,7 +91,7 @@ const API = (() => {
     },
     async getAll(key) {
       if (demo) return { sets: demoSets(), sessions: LS.get(K.sessions, []), responses: LS.get(K.responses, []) };
-      const j = await get({ action: "data", key });
+      const j = await post({ action: "data", key });
       return { sets: j.sets, sessions: j.sessions, responses: j.responses };
     },
     async saveSets(key, sets) {

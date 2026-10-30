@@ -86,7 +86,7 @@ textarea{resize:vertical;line-height:1.7}
 .paper .opts.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .paper .opts.cols-1{grid-template-columns:minmax(0,1fr)}
 @container (max-width:560px){.paper .opts.cols-4,.paper .opts.cols-2{grid-template-columns:minmax(0,1fr)}}
-.paper .opt{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:baseline;cursor:pointer;border-radius:3px;margin:0 -.2em;padding:0 .2em;text-align:left}
+.paper .opt{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:baseline;cursor:pointer;border-radius:3px;margin:0 -.2em;padding:0 .2em;text-align:left}
 .paper .opt:hover{background:#f1f5f8}
 .paper .opt .k{white-space:nowrap}
 .paper .opt:has(input:checked){background:var(--sel);color:var(--sel-ink)}
