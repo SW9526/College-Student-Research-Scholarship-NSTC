@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>學測國文閱讀作答研究</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=LXGW+WenKai+TC&display=swap">
+<link rel="stylesheet" href="assets/common.css">
+</head>
+<body>
+<div class="progress" id="progress" role="progressbar" aria-label="填答進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+  <span class="lbl" id="progressLbl">填答進度 0%</span>
+  <div class="track"><div class="fill" id="progressFill"></div></div>
+</div>
+<div id="app"><div class="panel"><p class="muted">載入中…</p></div></div>
+
+<script src="https://unpkg.com/jspsych@7.3.4"></script>
+<script src="https://unpkg.com/@jspsych/plugin-html-button-response@1.2.0"></script>
+<script src="https://unpkg.com/@jspsych/plugin-survey-html-form@1.0.3"></script>
+<script src="assets/config.js"></script>
+<script src="assets/render.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/participant.js"></script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>施測管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=LXGW+WenKai+TC&display=swap">
+<link rel="stylesheet" href="assets/common.css">
+<style>
+body{padding-block:0 48px}
+.adminbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);border-bottom:1px solid var(--line);
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding-block:12px;margin-bottom:20px}
+.adminbar h1{font-size:1.15rem}
+.mode{font-size:.78rem;border-radius:4px;padding:1px 8px;border:1px solid currentColor}
+.mode.demo{color:var(--warn)} .mode.live{color:var(--ok)}
+.tabs{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+.tab{font:inherit;background:transparent;border:1px solid transparent;color:var(--muted);border-radius:6px;padding:5px 14px;cursor:pointer}
+.tab[aria-selected="true"]{background:var(--surface);border-color:var(--line);color:var(--ink);font-weight:500}
+.wrap{max-width:1500px;margin:0 auto}
+.login{max-width:420px;margin:60px auto}
+.err{color:var(--bad);font-size:.9rem}
+.status{font-size:.88rem;color:var(--muted)}
+.status.dirty{color:var(--warn)} .status.saved{color:var(--ok)}
+
+/* editor */
+.editor{display:grid;grid-template-columns:220px minmax(0,440px) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:1200px){.editor{grid-template-columns:200px minmax(0,1fr)} .preview{grid-column:1 / -1}}
+@media (max-width:760px){.editor{grid-template-columns:minmax(0,1fr)}}
+.sidebar{display:grid;gap:14px;position:sticky;top:72px}
+@media (max-width:760px){.sidebar{position:static}}
+.bk h3{font-size:.8rem;letter-spacing:.06em;color:var(--muted);font-weight:500;margin-bottom:6px}
+.bk ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.setbtn{font:inherit;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;cursor:pointer;display:grid;gap:0}
+.setbtn[aria-current="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.setbtn .id{font-weight:500;overflow-wrap:anywhere}
+.setbtn .meta{font-size:.78rem;color:var(--muted)}
+.form{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px;display:grid;gap:14px}
+.row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.form label.f{display:grid;gap:4px;font-size:.85rem;color:var(--muted)}
+.form label.f > span{font-weight:500;color:var(--ink)}
+.check{display:flex;gap:6px;align-items:center;font-size:.9rem}
+.hint{font-size:.8rem;color:var(--muted)}
+.itemed{border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:8px}
+.itemed header{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.itemed header b{margin-right:auto}
+.opt-row{display:grid;grid-template-columns:2em minmax(0,1fr);gap:6px;align-items:center}
+.opt-row span{font-family:var(--f-num);color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.errors{border:1px solid var(--bad);border-radius:6px;padding:8px 12px;color:var(--bad);font-size:.88rem}
+.preview{display:grid;gap:8px;min-width:0}
+.preview .cap{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}
+.preview .frame{border:1px dashed var(--line);border-radius:10px;padding:14px;background:var(--bg)}
+.preview .taskbar{position:static}
+
+/* data */
+.data{display:grid;gap:16px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:6px 12px;font-size:.9rem}
+.chip b{font-family:var(--f-num);margin-left:6px}
+.filters{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.filters input[type=number]{width:5em;padding:2px 6px}
+.pill{display:inline-block;font-size:.76rem;border-radius:999px;padding:0 8px;border:1px solid currentColor}
+.pill.ok{color:var(--ok)} .pill.wip{color:var(--warn)} .pill.bad{color:var(--bad)}
+td.low{color:var(--bad)}
+</style>
+</head>
+<body>
+<header class="adminbar wrap">
+  <h1>施測管理</h1>
+  <span class="mode" id="mode"></span>
+  <nav class="tabs" id="tabs" role="tablist" hidden>
+    <button class="tab" role="tab" id="tab-edit" aria-selected="true">題目編輯</button>
+    <button class="tab" role="tab" id="tab-data" aria-selected="false">收集資料</button>
+    <button class="tab" id="logout" type="button">登出</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section class="login panel" id="login">
+    <h2>管理者登入</h2>
+    <label class="field"><span class="q">管理密碼</span><input type="password" id="key" autocomplete="current-password"></label>
+    <p class="err" id="loginErr" hidden></p>
+    <button class="btn" id="loginBtn" type="button" style="justify-self:center">登入</button>
+    <p class="muted" id="loginHint"></p>
+  </section>
+
+  <section id="view-edit" hidden>
+    <div class="editor">
+      <aside class="sidebar">
+        <div id="setList"></div>
+        <button class="btn ghost small" id="addSet" type="button">新增題組</button>
+      </aside>
+      <div class="form" id="form"></div>
+      <div class="preview">
+        <div class="cap"><span>受試者看到的畫面（可以直接試畫重點、點選項）</span><span id="pvNote"></span></div>
+        <div class="frame" id="preview"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-data" class="data" hidden></section>
+</main>
+
+<script src="assets/config.js"></script>
+<script src="assets/render.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/admin.js"></script>
+</body>
+</html>
