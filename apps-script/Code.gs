@@ -17,7 +17,7 @@ const SHEETS = {
   },
   Sessions: {
     cols: ["started_at", "pid", "booklet", "status", "completed_at", "total_ms", "exam_year", "retake", "seen_items", "tutor", "copy_attempts", "user_agent", "screen", "save_failed",
-      "zh_level", "grade", "native_zh", "honest", "fb_time", "fb_return", "fb_unclear", "fb_other", "n_reloads", "bg_extra"],
+      "zh_level", "grade", "native_zh", "honest", "fb_time", "fb_return", "fb_unclear", "fb_other", "n_reloads", "bg_extra", "is_test"],
     json: ["bg_extra"]   // bg_extra：管理者在背景問卷新增的題目的答案 {題目代號: 答案}
   },
   Responses: {
@@ -95,7 +95,8 @@ function doPost(e) {
       case "data":
         // 管理者讀取資料改用 POST，密碼不會出現在網址與執行紀錄中
         requireAdmin(body.key);
-        return out({ ok: true, sets: readRows("Sets"), sessions: readRows("Sessions"), responses: readRows("Responses"), texts: readTexts(), images: readImages() });
+        return out({ ok: true, sets: readRows("Sets"), sessions: readRows("Sessions"), responses: readRows("Responses"), texts: readTexts(), images: readImages(),
+          sheet_url: SpreadsheetApp.getActiveSpreadsheet().getUrl() });   // 只在管理者登入後提供，不寫進公開的程式碼
       case "saveSets":
         requireAdmin(body.key);
         writeSets(body.sets);
@@ -119,7 +120,7 @@ function doPost(e) {
 function assignBooklet() {
   const booklets = [...new Set(readRows("Sets").filter(s => s.active !== false && s.active !== "FALSE" && String(s.booklet) !== PRACTICE_BOOKLET).map(s => String(s.booklet)))].sort();
   if (!booklets.length) throw new Error("沒有啟用中的題組");
-  const sessions = readRows("Sessions");
+  const sessions = readRows("Sessions").filter(s => s.is_test !== true && s.is_test !== "TRUE");   // 測試資料不影響分派
   const count = b => sessions.filter(s => String(s.booklet) === b).length;
   const min = Math.min.apply(null, booklets.map(count));
   const pool = booklets.filter(b => count(b) === min);
