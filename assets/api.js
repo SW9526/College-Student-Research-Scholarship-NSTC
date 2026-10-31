@@ -166,7 +166,7 @@ const API = (() => {
     async getAll(key) {
       if (demo) return { sets: demoSets(), sessions: LS.get(K.sessions, []), responses: LS.get(K.responses, []), texts: LS.get(K.texts, {}), images: LS.get(K.images, {}) };
       const j = await post({ action: "data", key });
-      return { sets: j.sets, sessions: j.sessions, responses: j.responses, texts: j.texts || {}, images: j.images || {} };
+      return { sets: j.sets, sessions: j.sessions, responses: j.responses, texts: j.texts || {}, images: j.images || {}, sheet_url: j.sheet_url || "" };
     },
     // images：題組用到的全部圖片 {代號: dataURL}，存檔時整批取代
     async saveSets(key, sets, images) {

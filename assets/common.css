@@ -82,6 +82,8 @@ mark.todo{background:var(--flag-soft);color:var(--warn);border-radius:3px;paddin
 .fsbar{position:fixed;top:0;left:0;right:0;z-index:40;font:inherit;font-size:.9rem;font-weight:500;border:0;cursor:pointer;
   background:var(--flag);color:var(--flag-ink);padding:8px 16px;text-align:center}
 
+.testbar{position:sticky;top:0;z-index:35;margin:-24px -16px 12px;padding:4px 16px;background:var(--accent-soft);color:var(--accent);font-size:.82rem;text-align:center}
+
 /* 完成題組的確認視窗 */
 .modal{position:fixed;inset:0;z-index:50;background:rgba(15,23,30,.45);display:grid;place-items:center;padding:16px}
 .modal-box{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:22px 24px;max-width:440px;width:100%;display:grid;gap:18px;
@@ -119,7 +121,7 @@ mark.todo{background:var(--flag-soft);color:var(--warn);border-radius:3px;paddin
 .paper .fig figcaption{font-size:.85em}
 .paper .q{position:relative;padding-left:1.67em;margin-top:.15em}
 .paper .qno{position:absolute;left:0;top:0}
-@container (max-width:560px){.paper .stem{margin:0}
+.paper .stem{margin:0}
 .paper .opts{display:grid;gap:0 1em}
 .paper .opts.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .paper .opts.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}

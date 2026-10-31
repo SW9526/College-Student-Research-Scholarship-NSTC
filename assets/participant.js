@@ -51,8 +51,19 @@
   const setsOf = b => formal.filter(s => String(s.booklet) === String(b)).sort((x, y) => (x.order || 0) - (y.order || 0));
   let V = textVars(CFG, { DEMO: API.demo, N_SETS: setsOf(formal[0]?.booklet).length || "" });
 
+  /* ---------- 測試模式（?test=TEST_KEY）：不擋重複作答、不記「已完成」、資料標記為測試；可用 &booklet= 指定題本 ---------- */
+  const qs = new URLSearchParams(location.search);
+  const TEST = !!CFG.TEST_KEY && qs.get("test") === CFG.TEST_KEY;
+  const testBooklet = TEST ? qs.get("booklet") : null;
+  if (TEST) {
+    const bar = document.createElement("div");
+    bar.className = "testbar";
+    bar.textContent = "測試模式：作答資料會標記為測試，不納入分析，也不會擋重複作答" + (testBooklet ? `（題本 ${testBooklet}）` : "");
+    document.body.prepend(bar);
+  }
+
   /* ---------- 同一台電腦已完成過：不再作答 ---------- */
-  if (done.get()) {
+  if (done.get() && !TEST) {
     show(PAGE_HTML.already_done(T, V));
     app.querySelector("[data-reset]")?.addEventListener("click", () => { done.clear(); ss.clear(); location.reload(); });
     return;
@@ -62,6 +73,8 @@
      store：每個題組的作答、畫記、離開紀錄與累計時間。時間一律是「停留在該題組的累計時間」：
      rt_ms＝停留時間總和；log 裡的 t、離開的 at_ms 都以累計時間計。 */
   let S = ss.get();
+  // 同一個分頁先後開一般連結與測試連結（或換了指定題本）時，不接續另一種模式的進度
+  if (S && (!!S.test !== TEST || (testBooklet && S.booklet && S.booklet !== testBooklet))) { S = null; ss.clear(); }
   let sets = S ? setsOf(S.booklet) : [];
   let store = S ? S.store : [];
   let visit = null;                                   // 目前題組頁：{ i, start(performance), st, practice }
@@ -166,7 +179,7 @@
     show(PAGE_HTML.consent(T, V));
     await formSubmit(app.querySelector("form"));
     S = { pid: Math.random().toString(36).slice(2, 12), stage: "background", cur: 0, store: [], seq: 0, lastSeq: {}, copyN: 0, nReloads: 0,
-      startWall, examStartWall: null, savedAt: Date.now(), draft: {} };
+      startWall, examStartWall: null, savedAt: Date.now(), draft: {}, test: TEST };
     saveState();
   }
 
@@ -193,7 +206,7 @@
     const btn = form.querySelector("button[type=submit]"); btn.disabled = true; btn.textContent = "載入中…";
     let booklet;
     try {
-      booklet = await API.assign();
+      booklet = testBooklet && setsOf(testBooklet).length ? testBooklet : await API.assign();
       if (!setsOf(booklet).length) throw new Error("題本中沒有題組");
     } catch (e) {
       show(`<div class="panel"><h2>目前無法開始作答</h2><p>題目分派失敗，請稍後重新整理頁面；若持續發生，請聯絡研究人員。</p><p class="muted">${esc(e.message)}</p></div>`);
@@ -205,7 +218,7 @@
     delete S.draft.background;
     V = textVars(CFG, { DEMO: API.demo, N_SETS: sets.length });
     saveState();
-    send(API.start, { pid: S.pid, booklet, ...answers, user_agent: navigator.userAgent, screen: `${screen.width}x${screen.height}` });
+    send(API.start, { pid: S.pid, booklet, ...answers, ...(TEST ? { is_test: true } : {}), user_agent: navigator.userAgent, screen: `${screen.width}x${screen.height}` });
   }
 
   async function instructions() {
@@ -364,7 +377,8 @@
     };
     // 交卷紀錄本身也失敗時，這位受試者會停在「未完成」，同樣不會納入分析
     await API.complete(S.pid, patch).catch(() => API.complete(S.pid, patch)).catch(() => {});
-    S.stage = "done"; ss.clear(); done.set();
+    S.stage = "done"; ss.clear();
+    if (!TEST) done.set();
     drawSteps();
     show(PAGE_HTML.complete(T, V, CFG));
   }
