@@ -53,6 +53,10 @@ body{padding-block:0 48px}
 .preview .cap{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.85rem;color:var(--muted)}
 .preview .frame{border:1px dashed var(--line);border-radius:10px;padding:14px;background:var(--bg)}
 .preview .taskbar{position:static}
+.pagelist{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+#textPreview{display:grid;gap:14px}
+#textPreview hr{border:0;border-top:1px dashed var(--line);margin:4px 0}
+code{font-family:var(--f-num);font-size:.85em;background:var(--bg);border-radius:3px;padding:0 3px}
 
 /* data */
 .data{display:grid;gap:16px}
@@ -72,6 +76,7 @@ td.low{color:var(--bad)}
   <span class="mode" id="mode"></span>
   <nav class="tabs" id="tabs" role="tablist" hidden>
     <button class="tab" role="tab" id="tab-edit" aria-selected="true">題目編輯</button>
+    <button class="tab" role="tab" id="tab-texts" aria-selected="false">頁面文字</button>
     <button class="tab" role="tab" id="tab-data" aria-selected="false">收集資料</button>
     <button class="tab" id="logout" type="button">登出</button>
   </nav>
@@ -100,11 +105,14 @@ td.low{color:var(--bad)}
     </div>
   </section>
 
+  <section id="view-texts" hidden></section>
+
   <section id="view-data" class="data" hidden></section>
 </main>
 
 <script src="assets/config.js"></script>
 <script src="assets/render.js"></script>
+<script src="assets/texts.js"></script>
 <script src="assets/api.js"></script>
 <script src="assets/admin.js"></script>
 </body>
