@@ -17,8 +17,8 @@ const SHEETS = {
   },
   Sessions: {
     cols: ["started_at", "pid", "booklet", "status", "completed_at", "total_ms", "exam_year", "retake", "seen_items", "tutor", "copy_attempts", "user_agent", "screen", "save_failed",
-      "zh_level", "grade", "native_zh", "honest", "fb_time", "fb_return", "fb_unclear", "fb_other", "n_reloads"],
-    json: []
+      "zh_level", "grade", "native_zh", "honest", "fb_time", "fb_return", "fb_unclear", "fb_other", "n_reloads", "bg_extra"],
+    json: ["bg_extra"]   // bg_extra：管理者在背景問卷新增的題目的答案 {題目代號: 答案}
   },
   Responses: {
     cols: ["timestamp", "pid", "booklet", "set_id", "set_order", "rt_ms", "n_items", "n_blank", "effort", "effort_rt_ms",
