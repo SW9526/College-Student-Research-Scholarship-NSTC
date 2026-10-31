@@ -56,6 +56,8 @@
   const qs = new URLSearchParams(location.search);
   const TEST = !!CFG.TEST_KEY && qs.get("test") === CFG.TEST_KEY;
   const testBooklet = TEST ? qs.get("booklet") : null;
+  // ?reset=TEST_KEY：清除這台電腦的「已完成」紀錄與進度，回到一般的受試者網址（研究團隊用）
+  if (CFG.TEST_KEY && qs.get("reset") === CFG.TEST_KEY) { done.clear(); ss.clear(); location.replace(location.pathname); return; }
   if (TEST) {
     const bar = document.createElement("div");
     bar.className = "testbar";

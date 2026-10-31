@@ -141,7 +141,9 @@ function renderTestLinks() {
   box.innerHTML = `<h3>測試受試者頁</h3>
     <p class="hint">用這些連結開啟的受試者頁不會擋重複作答，作答資料會標記為「測試」，不納入分析。<b>不要把這些連結給受試者。</b></p>
     <div class="tools"><a class="tool" href="${url("")}" target="_blank" rel="noopener">隨機題本</a>
-      ${formal.map(b => `<a class="tool" href="${url(b)}" target="_blank" rel="noopener">題本 ${esc(b)}</a>`).join("")}</div>`;
+      ${formal.map(b => `<a class="tool" href="${url(b)}" target="_blank" rel="noopener">題本 ${esc(b)}</a>`).join("")}</div>
+    <p class="hint">在某台電腦被擋在「你已經完成過本研究」時，在那台電腦開啟：
+      <a href="index.html?reset=${encodeURIComponent(key)}" target="_blank" rel="noopener">清除這台電腦的作答紀錄</a></p>`;
 }
 
 let pvTimer = null;
