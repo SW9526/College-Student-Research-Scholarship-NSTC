@@ -20,6 +20,21 @@
     e.preventDefault();
     res(Object.fromEntries(new FormData(form)));
   }));
+  /* 問卷的作答草稿：每次輸入都存進進度，重新整理後還原（含複選題的勾選狀態） */
+  function bindDraft(form, key) {
+    const d = ((S.draft ||= {})[key]) || {};
+    Object.entries(d).forEach(([name, val]) => form.querySelectorAll(`[name="${CSS.escape(name)}"]`).forEach(el => {
+      if (el.type === "radio" || el.type === "checkbox") el.checked = el.value === val;
+      else if (el.type === "hidden") {
+        el.value = val;
+        const vs = String(val).split("、");
+        form.querySelectorAll(`.multi[data-id="${CSS.escape(name)}"] input[type=checkbox]`).forEach(b => { b.checked = vs.includes(b.value); });
+      } else el.value = val;
+    }));
+    const save = () => { S.draft[key] = Object.fromEntries(new FormData(form)); saveState(); };
+    form.addEventListener("input", save);
+    form.addEventListener("change", save);   // 複選題的隱藏欄位在勾選框自己的 change 先更新，這裡才存
+  }
   const goFullscreen = () => { try { const p = document.documentElement.requestFullscreen?.(); if (p) p.catch(() => {}); } catch (e) {} };
 
   /* ---------- 載入題目、頁面文字、圖片 ---------- */
@@ -145,16 +160,21 @@
     else await new Promise(() => {});                // 正式施測時停在這頁
   }
 
-  async function consent() {
+  // 同意後就開始保存進度：之後重新整理會回到背景問卷，不必再看一次知情同意
+  async function consent(startWall) {
     preStage = "consent"; drawSteps();
     show(PAGE_HTML.consent(T, V));
     await formSubmit(app.querySelector("form"));
+    S = { pid: Math.random().toString(36).slice(2, 12), stage: "background", cur: 0, store: [], seq: 0, lastSeq: {}, copyN: 0, nReloads: 0,
+      startWall, examStartWall: null, savedAt: Date.now(), draft: {} };
+    saveState();
   }
 
-  async function background(startWall) {
-    preStage = "background"; drawSteps();
+  async function background() {
+    drawSteps();
     show(PAGE_HTML.background(T, V, CFG));
     const form = app.querySelector("form");
+    bindDraft(form, "background");          // 先還原草稿，下面複選題的檢查才會讀到已勾的選項
     // 複選題：勾選的值以「、」串起來放進同名隱藏欄位；必答時至少要勾一個
     form.querySelectorAll(".multi").forEach(group => {
       const boxes = [...group.querySelectorAll("input[type=checkbox]")], hidden = form.querySelector(`input[type=hidden][name="${CSS.escape(group.dataset.id)}"]`);
@@ -179,13 +199,13 @@
       show(`<div class="panel"><h2>目前無法開始作答</h2><p>題目分派失敗，請稍後重新整理頁面；若持續發生，請聯絡研究人員。</p><p class="muted">${esc(e.message)}</p></div>`);
       return new Promise(() => {});
     }
-    const pid = Math.random().toString(36).slice(2, 12);
     sets = setsOf(booklet);
     store = sets.map(() => ({ responses: {}, ansLog: [], hlLog: [], runs: [], leaves: [], fsExits: 0, visits: [], activeMs: 0, firstRtMs: null, effort: null, effortRtMs: null, uploaded: false, confirmed: false }));
-    S = { pid, booklet, stage: "instructions", cur: 0, store, seq: 0, lastSeq: {}, copyN: 0, nReloads: 0, startWall, examStartWall: null, savedAt: Date.now() };
+    Object.assign(S, { booklet, stage: "instructions", store });
+    delete S.draft.background;
     V = textVars(CFG, { DEMO: API.demo, N_SETS: sets.length });
     saveState();
-    send(API.start, { pid, booklet, ...answers, user_agent: navigator.userAgent, screen: `${screen.width}x${screen.height}` });
+    send(API.start, { pid: S.pid, booklet, ...answers, user_agent: navigator.userAgent, screen: `${screen.width}x${screen.height}` });
   }
 
   async function instructions() {
@@ -319,7 +339,10 @@
   async function postSurvey() {
     drawSteps();
     show(PAGE_HTML.post(T, V));
-    S.post = await formSubmit(app.querySelector("form"));
+    const form = app.querySelector("form");
+    bindDraft(form, "post");
+    S.post = await formSubmit(form);
+    delete S.draft.post;
     S.stage = "finishing"; saveState();
   }
 
@@ -370,12 +393,14 @@
   drawSteps();
   if (!S) {
     await deviceCheck();
-    const startWall = Date.now();
-    await consent();
-    await background(startWall);
+    await consent(Date.now());
+    await background();
   } else {
     if (!isComputer() && !API.demo) { show(PAGE_HTML.device(T, V, false)); return; }
-    await resume();
+    if (S.stage === "background") {      // 還在背景問卷：直接回到問卷（不需要全螢幕，不顯示接續頁）
+      S.nReloads = (S.nReloads || 0) + 1; saveState();
+      await background();
+    } else await resume();
   }
   if (S.stage === "instructions") { await instructions(); S.stage = "practice"; }
   if (S.stage === "practice") await practiceRun();
