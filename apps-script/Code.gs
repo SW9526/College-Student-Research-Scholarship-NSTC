@@ -86,14 +86,22 @@ function doPost(e) {
       case "assign":
         return out({ ok: true, booklet: assignBooklet() });
       case "start":
-        appendRow("Sessions", Object.assign({}, body.session, { started_at: new Date(), status: "started" }));
+        // 重送（例如上次結果不明）時更新原列，不新增重複的列
+        if (!updateSession(body.session.pid, body.session))
+          appendRow("Sessions", Object.assign({}, body.session, { started_at: new Date(), status: "started" }));
         return out({ ok: true });
       case "submitSet":
         upsertResponse(Object.assign({}, body.row, { timestamp: new Date() }));
         return out({ ok: true });
-      case "complete":
-        updateSession(body.pid, Object.assign({}, body.patch, { status: "completed", completed_at: new Date() }));
+      case "complete": {
+        const patch = Object.assign({}, body.patch, { status: "completed", completed_at: new Date() });
+        // 找不到這位受試者（背景資料始終沒送達）時，用交卷時附上的背景資料補建一列
+        if (!updateSession(body.pid, patch)) {
+          const s = Object.assign({ pid: body.pid }, body.session || {});
+          appendRow("Sessions", Object.assign(s, { started_at: s.started_at ? new Date(s.started_at) : "" }, patch));
+        }
         return out({ ok: true });
+      }
       case "login":
         requireAdmin(body.key);
         return out({ ok: true });
@@ -190,14 +198,15 @@ function upsertResponse(obj) {
 function updateSession(pid, patch) {
   const sh = sheet("Sessions"), cols = SHEETS.Sessions.cols;
   const last = sh.getLastRow();
-  if (last < 2) return;
+  if (last < 2) return false;
   const ids = sh.getRange(2, cols.indexOf("pid") + 1, last - 1, 1).getValues().map(r => String(r[0]));
   const idx = ids.lastIndexOf(String(pid));
-  if (idx < 0) return;
+  if (idx < 0) return false;
   Object.keys(patch).forEach(k => {
     const ci = cols.indexOf(k);
     if (ci >= 0) sh.getRange(idx + 2, ci + 1).setValue(toCell("Sessions", k, patch[k]));
   });
+  return true;
 }
 function writeSets(sets) {
   if (!Array.isArray(sets)) throw new Error("題目格式錯誤");
