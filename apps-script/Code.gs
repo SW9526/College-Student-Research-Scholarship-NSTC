@@ -65,6 +65,11 @@ function doGet(e) {
       }));
       return out({ ok: true, sets: sets, texts: readTexts(), images: readImages() });
     }
+    if (p.action === "exists") {
+      // 只回答這個編碼是否還在 Sessions（研究者刪除後，該電腦可重新作答），不回傳任何作答內容
+      const pid = String(p.pid || "");
+      return out({ ok: true, exists: !!pid && readRows("Sessions").some(s => String(s.pid) === pid) });
+    }
     return out({ ok: true, message: "running" });
   } catch (err) {
     return out({ ok: false, error: String(err.message || err) });
