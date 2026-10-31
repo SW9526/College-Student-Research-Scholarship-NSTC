@@ -146,7 +146,7 @@ const API = (() => {
       return (await post({ action: "assign" })).booklet;
     },
     async start(session) {
-      if (demo) { const a = LS.get(K.sessions, []); if (!a.some(x => x.pid === session.pid)) a.push({ ...session, started_at: now(), status: "started" }); LS.set(K.sessions, a); return; }
+      if (demo) { const a = LS.get(K.sessions, []); const o = a.find(x => x.pid === session.pid); if (o) Object.assign(o, session); else a.push({ ...session, started_at: now(), status: "started" }); LS.set(K.sessions, a); return; }
       await post({ action: "start", session });
     },
     async submitSet(row) {
@@ -159,9 +159,14 @@ const API = (() => {
       }
       await post({ action: "submitSet", row });
     },
-    async complete(pid, patch) {
-      if (demo) { const a = LS.get(K.sessions, []); const s = a.find(x => x.pid === pid); if (s) Object.assign(s, patch, { status: "completed", completed_at: now() }); LS.set(K.sessions, a); return; }
-      await post({ action: "complete", pid, patch });
+    // session：背景資料，後端找不到這位受試者時用來補建一列
+    async complete(pid, patch, session) {
+      if (demo) {
+        const a = LS.get(K.sessions, []); let s = a.find(x => x.pid === pid);
+        if (!s) a.push(s = { ...(session || { pid }) });
+        Object.assign(s, patch, { status: "completed", completed_at: now() }); LS.set(K.sessions, a); return;
+      }
+      await post({ action: "complete", pid, patch, session });
     },
     /* ---- 管理者端 ---- */
     async login(key) {

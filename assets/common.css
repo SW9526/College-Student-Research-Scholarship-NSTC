@@ -70,6 +70,7 @@ textarea{resize:vertical;line-height:1.7}
 /* 頁面版型 */
 .stack{display:grid;gap:14px}
 .btn.center{justify-self:center}
+.actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 .actions.end{justify-content:flex-end}
 .consent h3{margin-top:4px}
 mark.todo{background:var(--flag-soft);color:var(--warn);border-radius:3px;padding:0 2px}

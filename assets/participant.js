@@ -224,7 +224,14 @@
     delete S.draft.background;
     V = textVars(CFG, { DEMO: API.demo, N_SETS: sets.length });
     saveState();
-    send(API.start, { pid: S.pid, booklet, ...answers, ...(TEST ? { is_test: true } : {}), user_agent: navigator.userAgent, screen: `${screen.width}x${screen.height}` });
+    S.session = { pid: S.pid, booklet, ...answers, ...(TEST ? { is_test: true } : {}), user_agent: navigator.userAgent, screen: `${screen.width}x${screen.height}` };
+    saveState();
+    sendStart();
+  }
+  // 上傳背景資料；成功後記下 startOk。後端以 pid 判斷，重送不會產生重複的列
+  function sendStart() {
+    if (!S.session || S.startOk) return;
+    send(API.start, S.session).then(r => { if (!(r && r.failed)) { S.startOk = true; saveState(); } });
   }
 
   async function instructions() {
@@ -272,7 +279,7 @@
         const holder = document.createElement("div");
         holder.innerHTML = PAGE_HTML.confirm(T, { ...V, N: set.items.length - nAns() });
         document.body.appendChild(holder);
-        holder.querySelector("[data-ok]").focus();
+        holder.querySelector("[data-cancel]").focus();     // 預設在「返回作答」：習慣按 Enter 也不會直接完成
         const close = () => holder.remove();
         holder.querySelector("[data-cancel]").addEventListener("click", close);
         holder.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
@@ -371,18 +378,21 @@
     show(`<div class="panel"><h1>正在儲存作答資料…</h1><p class="muted">請先不要關閉這個頁面。</p></div>`);
     // 還沒確認送達的題組（含重新整理前送出、結果不明的）再上傳一次
     store.forEach((s, k) => { if (s.effort != null && !s.confirmed) upload(k); });
+    sendStart();                                         // 背景資料還沒確認送達（例如重新整理前失敗）時再送一次
     // 等所有上傳完成，失敗的重試一次；仍失敗的記在 Sessions 的 save_failed，管理者頁預設排除這位受試者
     const results = await Promise.all(pending);
     const failed = results.filter(r => r && r.failed);
     const retry = await Promise.all(failed.map(f => f.fn(...f.args).then(() => null).catch(() => f)));
-    const lost = retry.filter(f => f && !(f.fn === API.submitSet && f.args[0].save_seq !== S.lastSeq[f.args[0].set_id]))
-      .map(f => f.fn === API.submitSet ? "題組 " + f.args[0].set_id : f.fn === API.start ? "背景資料" : "其他");
+    const lost = retry.filter(f => f && f.fn !== API.start && !(f.fn === API.submitSet && f.args[0].save_seq !== S.lastSeq[f.args[0].set_id]))
+      .map(f => f.fn === API.submitSet ? "題組 " + f.args[0].set_id : "其他");
     const patch = {
       total_ms: Date.now() - S.startWall, copy_attempts: S.copyN || 0, n_reloads: S.nReloads || 0,
       save_failed: lost.join("、"), ...(S.post || {})
     };
     // 交卷紀錄本身也失敗時，這位受試者會停在「未完成」，同樣不會納入分析
-    await API.complete(S.pid, patch).catch(() => API.complete(S.pid, patch)).catch(() => {});
+    // 一併附上背景資料：後端找不到這位受試者（背景資料始終沒送達）時，用它補建一列
+    const session = { ...(S.session || { pid: S.pid, booklet: S.booklet }), started_at: new Date(S.startWall).toISOString() };
+    await API.complete(S.pid, patch, session).catch(() => API.complete(S.pid, patch, session)).catch(() => {});
     S.stage = "done"; ss.clear();
     if (!TEST) done.set(S.pid);
     drawSteps();
@@ -392,6 +402,7 @@
   /* ---------- 重新整理後接續：中斷的這段時間記為一次離開（via: reload），不算作答時間 ---------- */
   async function resume() {
     V = textVars(CFG, { DEMO: API.demo, N_SETS: sets.length });
+    sendStart();                                         // 重新整理前背景資料沒送達時，接續時再送
     S.nReloads = (S.nReloads || 0) + 1;
     drawSteps();
     show(PAGE_HTML.resume(T, V));
