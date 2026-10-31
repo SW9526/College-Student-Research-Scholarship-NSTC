@@ -9,9 +9,10 @@
     set(v) { try { sessionStorage.setItem(SS_KEY, JSON.stringify(v)); } catch (e) {} },
     clear() { try { sessionStorage.removeItem(SS_KEY); } catch (e) {} }
   };
+  // 「已完成」紀錄：{ at, pid }。舊版只存時間字串（沒有 pid，無法查詢，視為已完成）
   const done = {
-    get() { try { return localStorage.getItem(DONE_KEY); } catch (e) { return null; } },
-    set() { try { localStorage.setItem(DONE_KEY, new Date().toISOString()); } catch (e) {} },
+    get() { try { const v = localStorage.getItem(DONE_KEY); if (!v) return null; try { return JSON.parse(v); } catch (e) { return { at: v }; } } catch (e) { return null; } },
+    set(pid) { try { localStorage.setItem(DONE_KEY, JSON.stringify({ at: new Date().toISOString(), pid })); } catch (e) {} },
     clear() { try { localStorage.removeItem(DONE_KEY); } catch (e) {} }
   };
   const show = html => { app.innerHTML = html; window.scrollTo(0, 0); };
@@ -62,7 +63,10 @@
     document.body.prepend(bar);
   }
 
-  /* ---------- 同一台電腦已完成過：不再作答 ---------- */
+  /* ---------- 同一台電腦已完成過：不再作答 ----------
+     研究者在試算表刪除這位受試者（Sessions 的那一列）後，這台電腦可以重新作答；查詢失敗（例如沒有網路）時仍視為已完成 */
+  const prev = TEST ? null : done.get();
+  if (prev && prev.pid && await API.sessionExists(prev.pid).then(x => !x, () => false)) done.clear();
   if (done.get() && !TEST) {
     show(PAGE_HTML.already_done(T, V));
     app.querySelector("[data-reset]")?.addEventListener("click", () => { done.clear(); ss.clear(); location.reload(); });
@@ -378,7 +382,7 @@
     // 交卷紀錄本身也失敗時，這位受試者會停在「未完成」，同樣不會納入分析
     await API.complete(S.pid, patch).catch(() => API.complete(S.pid, patch)).catch(() => {});
     S.stage = "done"; ss.clear();
-    if (!TEST) done.set();
+    if (!TEST) done.set(S.pid);
     drawSteps();
     show(PAGE_HTML.complete(T, V, CFG));
   }

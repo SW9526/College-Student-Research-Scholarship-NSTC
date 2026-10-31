@@ -129,6 +129,11 @@ const API = (() => {
       const j = await get({ action: "items" });
       return { sets: j.sets, texts: j.texts || {}, images: j.images || {} };
     },
+    // 這位受試者的資料是否還在（研究者刪除後，該電腦可重新作答）
+    async sessionExists(pid) {
+      if (demo) return LS.get(K.sessions, []).some(s => String(s.pid) === String(pid));
+      return (await get({ action: "exists", pid })).exists;
+    },
     async assign() {
       if (demo) {
         const booklets = [...new Set(demoSets().filter(isFormal).map(s => s.booklet))].sort();
