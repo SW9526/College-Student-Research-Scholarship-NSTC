@@ -187,7 +187,6 @@ function renderEditor() {
     <div class="row">
       <label class="f"><span>題組代號</span><input type="text" id="f_set_id" value="${esc(set.set_id)}" placeholder="例：114-R1"></label>
       <label class="f"><span>題本</span><input type="text" id="f_booklet" value="${esc(set.booklet)}" placeholder="A、B 或 練習"></label>
-      <div class="f"><span>順序</span><p class="hint" style="margin:6px 0 0">第 ${esc(set.order || "–")} 個（在左側拖曳調整）</p></div>
     </div>
     <label class="check"><input type="checkbox" id="f_active" ${set.active !== false ? "checked" : ""}> 啟用（取消勾選後受試者不會看到這個題組）</label>
     <label class="f"><span>來源說明</span><input type="text" id="f_source" value="${esc(set.source)}" placeholder="例：114學年度學測國文 第21–22題"></label>
@@ -346,6 +345,16 @@ async function save() {
 
 /* ================= 收集資料 ================= */
 const F = { maxAwaySec: 30, useAway: true, useSeen: true, useYear: true, useSaveFail: true, useHonest: false, useTest: true };
+/* 排除條件：k 對應 F.useXxx；desc 是給使用者看的說明 */
+const FILTERS = [
+  { k: "Test", short: () => "測試資料", label: () => "測試資料", desc: "用管理頁「測試受試者頁」連結作答的資料。" },
+  { k: "Away", short: () => "離開過久", label: () => `作答期間累計離開超過 <input type="number" id="fAwaySec" min="0" value="${F.maxAwaySec}"> 秒`, desc: "切換到其他視窗或分頁的累計時間（含重新整理中斷的時間），可能分心或查資料。" },
+  { k: "Year", short: () => `學測年度為${YEARS_TXT}`, label: () => `學測年度為${YEARS_TXT}學年度`, desc: "考過與施測試題同年度的學測，等於作答過這些題目。" },
+  { k: "Seen", short: () => "看過試題", label: () => `看過${YEARS_TXT}學年度試題`, desc: "背景問卷中自填看過施測試題。" },
+  { k: "SaveFail", short: () => "部分資料未能儲存", label: () => "部分資料未能儲存", desc: "網路問題導致部分作答資料沒有上傳成功，資料不完整。" },
+  { k: "Honest", short: () => "自評未獨立作答", label: () => "自評未獨立作答", desc: "結尾問卷自評有查資料或請人協助。預設不排除，可視需要勾選。" }
+];
+const DATA_OPEN = new Set();   // 記住「排除條件」「詳細資料」是否展開（調整條件時畫面會重畫）
 const isTest = s => s.is_test === true || s.is_test === "TRUE" || s.is_test === "true";
 // 參加學測的年度與施測試題相同（例如預試時勾選 114 或 115 學年度）
 const tookItemYear = s => (String(s.exam_year || "").match(/\d{3}/g) || []).map(Number).some(y => YEARS.includes(y));
@@ -375,15 +384,14 @@ function analyse() {
   const people = sessions.map(s => {
     const rs = resp.filter(r => r.pid === s.pid);
     const leaveMs = rs.reduce((a, r) => a + (Number(r.leave_ms) || 0), 0);
-    const reasons = [];
-    if (F.useAway && leaveMs > F.maxAwaySec * 1000) reasons.push(`離開 ${sec(leaveMs)} 秒`);
-    if (F.useTest && isTest(s)) reasons.push("測試資料");
-    if (F.useYear && tookItemYear(s)) reasons.push(`學測年度為${YEARS_TXT}`);
-    if (F.useSeen && s.seen_items === "是") reasons.push("看過試題");
-    if (F.useHonest && s.honest && s.honest !== BG_OPTIONS.honest[0]) reasons.push("自評未獨立作答");
-    if (F.useSaveFail && s.save_failed) reasons.push("部分資料未能儲存");   // 受試者端重試後仍上傳失敗（見 save_failed 欄）
+    const flags = {
+      Away: leaveMs > F.maxAwaySec * 1000, Test: isTest(s), Year: tookItemYear(s), Seen: s.seen_items === "是",
+      SaveFail: !!s.save_failed,                                   // 受試者端重試後仍上傳失敗（見 save_failed 欄）
+      Honest: !!s.honest && s.honest !== BG_OPTIONS.honest[0]
+    };
+    const reasons = FILTERS.filter(f => F["use" + f.k] && flags[f.k]).map(f => f.k === "Away" ? `離開 ${sec(leaveMs)} 秒` : f.short());
     return {
-      ...s, rs, leaveMs, reasons,
+      ...s, rs, leaveMs, flags, reasons,
       nLeaves: rs.reduce((a, r) => a + (Number(r.n_leaves) || 0), 0),
       fsExits: rs.reduce((a, r) => a + (Number(r.n_fullscreen_exits) || 0), 0),
       score: rs.reduce((a, r) => a + (Number(r.n_correct) || 0), 0),
@@ -419,69 +427,94 @@ function analyse() {
 function renderData() {
   if (!S.data) return;
   const A = analyse();
-  const booklets = [...new Set(A.people.map(p => p.booklet))].sort();
-  const done = A.people.filter(p => p.status === "completed").length;
+  // 總覽的人數不含測試資料（排除測試資料時）
+  const real = A.people.filter(p => !(F.useTest && p.flags.Test));
+  const nTest = A.people.length - real.length;
+  const completed = real.filter(p => p.status === "completed");
+  const excluded = completed.filter(p => p.reasons.length);
+  const booklets = [...new Set(real.map(p => p.booklet))].filter(Boolean).sort();
+  const nMatch = k => A.people.filter(p => p.status === "completed" && p.flags[k]).length;
+  const kpi = (n, label, note) => `<div class="kpi"><b>${n}</b><span>${label}</span>${note ? `<small>${note}</small>` : ""}</div>`;
+  const dlItem = (id, name, desc) => `<li><button class="btn ghost small" id="${id}" type="button">${name}</button><span class="muted">${desc}</span></li>`;
   $("#view-data").innerHTML = `
+    <div class="howto">
+      <strong>怎麼使用這一頁</strong>
+      <ol>
+        <li>看「總覽」確認收到多少份資料、各題本人數是否接近。</li>
+        <li>需要時展開「排除條件」，決定哪些受試者不納入分析（預設已勾選建議的條件）。</li>
+        <li>按「下載分析用資料」取得逐題作答資料；試題分析、受試者名單與其他檔案在最下方「詳細資料」。</li>
+      </ol>
+    </div>
+
+    <h2>總覽</h2>
+    <div class="kpis">
+      ${kpi(completed.length, "已完成")}
+      ${kpi(real.length - completed.length, "未完成", "作答中，或中途離開")}
+      ${kpi(excluded.length, "已完成但排除", "符合下方排除條件")}
+      ${kpi(A.included.length, "納入分析")}
+    </div>
+    <p class="muted">各題本完成人數：${booklets.map(b => `題本 ${esc(b)} <b>${completed.filter(p => p.booklet === b).length}</b> 人`).join("・") || "—"}
+      ${nTest ? `（另有測試資料 ${nTest} 筆，未計入）` : ""}</p>
     <div class="actions">
-      <button class="btn small" id="refresh" type="button">重新整理</button>
-      <button class="btn ghost small" id="csvItems" type="button">下載試題分析 CSV</button>
-      <button class="btn ghost small" id="csvLong" type="button">下載作答資料 CSV</button>
-      <button class="btn ghost small" id="csvPeople" type="button">下載受試者 CSV</button>
+      <button class="btn" id="dlMain" type="button">下載分析用資料（${A.included.length} 人）</button>
+      <button class="btn ghost small" id="refresh" type="button">重新整理</button>
       ${API.demo ? '<button class="btn danger small" id="resetDemo" type="button">清除示範資料</button>' : ""}
     </div>
-    <div class="chips">
-      <span class="chip">已完成<b>${done}</b></span>
-      <span class="chip">未完成<b>${A.people.length - done}</b></span>
-      ${booklets.map(b => `<span class="chip">題本 ${esc(b)} 完成<b>${A.people.filter(p => p.booklet === b && p.status === "completed").length}</b></span>`).join("")}
-      <span class="chip">納入分析<b>${A.included.length}</b></span>
-    </div>
-    <div class="filters">
-      <strong>排除條件</strong>
-      <label class="check"><input type="checkbox" id="fAway" ${F.useAway ? "checked" : ""}> 作答期間累計離開超過 <input type="number" id="fAwaySec" min="0" value="${F.maxAwaySec}"> 秒</label>
-      <label class="check"><input type="checkbox" id="fTest" ${F.useTest ? "checked" : ""}> 測試資料（測試連結產生）</label>
-      <label class="check"><input type="checkbox" id="fYear" ${F.useYear ? "checked" : ""}> 學測年度為${YEARS_TXT}學年度</label>
-      <label class="check"><input type="checkbox" id="fSeen" ${F.useSeen ? "checked" : ""}> 看過${YEARS_TXT}學年度試題</label>
-      <label class="check"><input type="checkbox" id="fSaveFail" ${F.useSaveFail ? "checked" : ""}> 部分資料未能儲存</label>
-      <label class="check"><input type="checkbox" id="fHonest" ${F.useHonest ? "checked" : ""}> 自評未獨立作答</label>
-      <span class="muted">只有「已完成」且未被排除的受試者納入試題分析。</span>
-    </div>
-    <h2>試題分析</h2>
-    <p class="muted">答對率＝答對人數 ÷ 作答人數（留空算答錯）；鑑別度＝題本總分前 27% 與後 27% 的答對率差，納入人數少於 4 人時不計算。</p>
-    <div class="tablebox"><table>
-      <thead><tr><th>題本</th><th>題組</th><th>題號</th><th>答案</th><th>人數</th><th>答對率 P</th><th>鑑別度 D</th><th>留空率</th>${KEYS.map(k => `<th>選 ${k}</th>`).join("")}<th>題組平均心力</th><th>題組平均作答（秒）</th></tr></thead>
-      <tbody>${A.rows.map(r => `<tr${r.active ? "" : ' class="excluded"'}><td>${esc(r.booklet)}</td><td>${esc(r.set_id)}</td><td class="n">${r.no}</td><td>${r.answer}</td><td class="n">${r.N}</td>
-        <td class="n">${pct(r.P)}</td><td class="n${r.D != null && r.D < 0.2 ? " low" : ""}">${pct(r.D)}</td><td class="n">${pct(r.blank)}</td>
-        ${KEYS.map(k => `<td class="n">${pct(r.dist[k])}</td>`).join("")}<td class="n">${r.meanEff == null ? "—" : r.meanEff.toFixed(2)}</td><td class="n">${sec(r.meanRt)}</td></tr>`).join("") || `<tr><td colspan="14" class="muted">還沒有題目。</td></tr>`}</tbody>
-    </table></div>
-    <h2>受試者</h2>
-    <div class="tablebox"><table>
-      <thead><tr><th>編碼</th><th>題本</th><th>狀態</th><th>開始時間</th><th>得分</th><th>題組作答（秒）</th><th>離開次數</th><th>離開（秒）</th><th>退出全螢幕</th><th>複製嘗試</th><th>看過試題</th><th>排除原因</th></tr></thead>
-      <tbody>${A.people.map(p => `<tr${p.reasons.length ? ' class="excluded"' : ""}><td style="font-family:var(--f-num)">${esc(p.pid)}</td><td>${esc(p.booklet)}</td>
-        <td><span class="pill ${p.status === "completed" ? "ok" : "wip"}">${p.status === "completed" ? "已完成" : "未完成"}</span></td><td>${fmtTime(p.started_at)}</td>
-        <td class="n">${p.score} / ${p.nItems}</td><td class="n">${sec(p.setMs)}</td><td class="n">${p.nLeaves}</td><td class="n">${sec(p.leaveMs)}</td><td class="n">${p.fsExits}</td>
-        <td class="n">${p.copy_attempts ?? "—"}</td><td>${esc(p.seen_items || "—")}</td><td>${p.reasons.map(esc).join("、") || "—"}</td></tr>`).join("") || `<tr><td colspan="12" class="muted">還沒有受試者。把受試者版的連結發出去後，資料會出現在這裡。</td></tr>`}</tbody>
-    </table></div>`;
+    <p class="hint">分析用資料：每一列是一位受試者的一題（作答、對錯、時間、心力評分等），只包含「已完成」且未被排除的受試者。</p>
+
+    <details class="sec" data-k="filters" ${DATA_OPEN.has("filters") ? "open" : ""}>
+      <summary>排除條件<span class="muted">目前排除 ${excluded.length} 人</span></summary>
+      <p class="hint">勾選的條件會用在總覽、下載與試題分析。右側人數為「已完成」的受試者中符合該條件的人數。</p>
+      <ul class="flist">${FILTERS.map(f => `<li>
+        <label class="check"><input type="checkbox" id="f${f.k}" ${F["use" + f.k] ? "checked" : ""}> ${f.label()}</label>
+        <span class="cnt">${nMatch(f.k)} 人</span><p class="muted">${f.desc}</p></li>`).join("")}</ul>
+    </details>
+
+    <details class="sec" data-k="detail" ${DATA_OPEN.has("detail") ? "open" : ""}>
+      <summary>詳細資料與其他下載</summary>
+      <ul class="dlist">
+        ${dlItem("csvItems", "試題分析", "每一列是一題：答對率、鑑別度、各選項選答比例（即下方表格）。")}
+        ${dlItem("csvPeople", "受試者資料", "每一列是一位受試者：背景問卷、回饋意見、離開次數、排除原因（含被排除者）。")}
+        ${dlItem("csvLong", "全部作答資料", "格式同分析用資料，但包含被排除與未完成者，最後一欄「納入分析」標記 1 或 0。")}
+      </ul>
+      <h3>試題分析</h3>
+      <p class="muted">答對率＝答對人數 ÷ 作答人數（留空算答錯）；鑑別度＝題本總分前 27% 與後 27% 的答對率差，納入人數少於 4 人時不計算；低於 0.2 以紅字標示。</p>
+      <div class="tablebox"><table>
+        <thead><tr><th>題本</th><th>題組</th><th>題號</th><th>答案</th><th>人數</th><th>答對率 P</th><th>鑑別度 D</th><th>留空率</th>${KEYS.map(k => `<th>選 ${k}</th>`).join("")}<th>題組平均心力</th><th>題組平均作答（秒）</th></tr></thead>
+        <tbody>${A.rows.map(r => `<tr${r.active ? "" : ' class="excluded"'}><td>${esc(r.booklet)}</td><td>${esc(r.set_id)}</td><td class="n">${r.no}</td><td>${r.answer}</td><td class="n">${r.N}</td>
+          <td class="n">${pct(r.P)}</td><td class="n${r.D != null && r.D < 0.2 ? " low" : ""}">${pct(r.D)}</td><td class="n">${pct(r.blank)}</td>
+          ${KEYS.map(k => `<td class="n">${pct(r.dist[k])}</td>`).join("")}<td class="n">${r.meanEff == null ? "—" : r.meanEff.toFixed(2)}</td><td class="n">${sec(r.meanRt)}</td></tr>`).join("") || `<tr><td colspan="14" class="muted">還沒有題目。</td></tr>`}</tbody>
+      </table></div>
+      <h3>受試者</h3>
+      <p class="muted">刪除線表示不納入分析，原因見最後一欄。</p>
+      <div class="tablebox"><table>
+        <thead><tr><th>編碼</th><th>題本</th><th>狀態</th><th>開始時間</th><th>得分</th><th>題組作答（秒）</th><th>離開次數</th><th>離開（秒）</th><th>退出全螢幕</th><th>複製嘗試</th><th>看過試題</th><th>排除原因</th></tr></thead>
+        <tbody>${A.people.map(p => `<tr${p.reasons.length ? ' class="excluded"' : ""}><td style="font-family:var(--f-num)">${esc(p.pid)}</td><td>${esc(p.booklet)}</td>
+          <td><span class="pill ${p.status === "completed" ? "ok" : "wip"}">${p.status === "completed" ? "已完成" : "未完成"}</span></td><td>${fmtTime(p.started_at)}</td>
+          <td class="n">${p.score} / ${p.nItems}</td><td class="n">${sec(p.setMs)}</td><td class="n">${p.nLeaves}</td><td class="n">${sec(p.leaveMs)}</td><td class="n">${p.fsExits}</td>
+          <td class="n">${p.copy_attempts ?? "—"}</td><td>${esc(p.seen_items || "—")}</td><td>${p.reasons.map(esc).join("、") || "—"}</td></tr>`).join("") || `<tr><td colspan="12" class="muted">還沒有受試者。把受試者版的連結發出去後，資料會出現在這裡。</td></tr>`}</tbody>
+      </table></div>
+    </details>`;
+  $("#view-data").querySelectorAll("details[data-k]").forEach(d => d.addEventListener("toggle", () => { d.open ? DATA_OPEN.add(d.dataset.k) : DATA_OPEN.delete(d.dataset.k); }));
   $("#refresh").addEventListener("click", async () => { await loadAll(true); renderData(); });
-  $("#fAway").addEventListener("change", e => { F.useAway = e.target.checked; renderData(); });
+  FILTERS.forEach(f => $("#f" + f.k).addEventListener("change", e => { F["use" + f.k] = e.target.checked; renderData(); }));
+  $("#fAwaySec").addEventListener("click", e => e.preventDefault());   // 點數字框不要切換勾選
   $("#fAwaySec").addEventListener("change", e => { F.maxAwaySec = Number(e.target.value) || 0; renderData(); });
-  $("#fSeen").addEventListener("change", e => { F.useSeen = e.target.checked; renderData(); });
-  $("#fSaveFail").addEventListener("change", e => { F.useSaveFail = e.target.checked; renderData(); });
-  $("#fYear").addEventListener("change", e => { F.useYear = e.target.checked; renderData(); });
-  $("#fTest").addEventListener("change", e => { F.useTest = e.target.checked; renderData(); });
-  $("#fHonest").addEventListener("change", e => { F.useHonest = e.target.checked; renderData(); });
   $("#csvItems").addEventListener("click", () => download("試題分析.csv",
     [["題本", "題組", "題號", "題目代碼", "正確答案", "人數", "答對率P", "鑑別度D", "留空率", ...KEYS.map(k => "選" + k), "題組平均心力", "題組平均作答秒數"],
      ...A.rows.map(r => [r.booklet, r.set_id, r.no, r.item_id, r.answer, r.N, r.P, r.D, r.blank, ...KEYS.map(k => r.dist[k]), r.meanEff, r.meanRt == null ? "" : r.meanRt / 1000])]));
-  $("#csvLong").addEventListener("click", () => {
+  const longRows = onlyIncluded => {
     const setMap = Object.fromEntries(S.data.sets.map(s => [s.set_id, s]));
     const out = [["受試者", "題本", "題組", "題組順序", "題目代碼", "作答", "正確答案", "答對", "首次作答毫秒", "題組作答毫秒", "進入題組次數（重新整理會增加）", "心力耗費", "心力作答毫秒", "離開次數", "離開毫秒", "退出全螢幕", "畫記段數", "納入分析"]];
     const inc = new Set(A.included.map(p => p.pid));
-    A.resp.forEach(r => (setMap[r.set_id]?.items || Object.keys(r.responses || {}).map(id => ({ id }))).forEach(it => {
+    A.resp.filter(r => !onlyIncluded || inc.has(r.pid)).forEach(r => (setMap[r.set_id]?.items || Object.keys(r.responses || {}).map(id => ({ id }))).forEach(it => {
       const a = (r.responses || {})[it.id] ?? "";
       out.push([r.pid, r.booklet, r.set_id, r.set_order, it.id, a, it.answer ?? "", (r.correct || {})[it.id] ? 1 : 0, (r.first_answer_ms || {})[it.id] ?? "", r.rt_ms, r.n_visits || 1, r.effort, r.effort_rt_ms, r.n_leaves, r.leave_ms, r.n_fullscreen_exits, (r.highlights || []).length, inc.has(r.pid) ? 1 : 0]);
     }));
-    download("作答資料.csv", out);
-  });
+    return out;
+  };
+  $("#dlMain").addEventListener("click", () => download("分析用資料.csv", longRows(true)));
+  $("#csvLong").addEventListener("click", () => download("全部作答資料.csv", longRows(false)));
   // 管理者新增的背景題目（存在 bg_extra），以題目文字當欄名；已刪除但有資料的題目也保留
   const plain = t => String(t || "").replace(/__|\*\*/g, "").replace(/\{\{YEARS\}\}/g, YEARS_TXT);
   const extraQs = curQs().filter(q => !BG_COLUMNS.includes(q.id));
