@@ -405,10 +405,14 @@ function renderData() {
     }));
     download("作答資料.csv", out);
   });
+  // 管理者新增的背景題目（存在 bg_extra），以題目文字當欄名；已刪除但有資料的題目也保留
+  const plain = t => String(t || "").replace(/__|\*\*/g, "").replace(/\{\{YEARS\}\}/g, YEARS_TXT);
+  const extraQs = curQs().filter(q => !BG_COLUMNS.includes(q.id));
+  A.people.forEach(p => Object.keys(p.bg_extra || {}).forEach(id => { if (!extraQs.some(q => q.id === id)) extraQs.push({ id, label: id }); }));
   $("#csvPeople").addEventListener("click", () => download("受試者.csv",
-    [["受試者", "題本", "狀態", "開始時間", "完成時間", "總時間毫秒", "得分", "題數", "學測年度", "重考", "看過試題", "國文家教", "國文級距", "年級", "中文母語",
+    [["受試者", "題本", "狀態", "開始時間", "完成時間", "總時間毫秒", "得分", "題數", "學測年度", "重考", "看過試題", "國文家教", "國文級距", "年級", "中文母語", ...extraQs.map(q => plain(q.label)),
       "離開次數", "離開毫秒", "退出全螢幕", "複製嘗試", "重新整理次數", "獨立作答自評", "作答時間是否足夠", "是否想回到前面", "操作不清楚之處", "其他意見", "排除原因", "未能儲存的資料", "裝置", "螢幕"],
-     ...A.people.map(p => [p.pid, p.booklet, p.status, p.started_at, p.completed_at, p.total_ms, p.score, p.nItems, p.exam_year, p.retake, p.seen_items, p.tutor, p.zh_level, p.grade, p.native_zh,
+     ...A.people.map(p => [p.pid, p.booklet, p.status, p.started_at, p.completed_at, p.total_ms, p.score, p.nItems, p.exam_year, p.retake, p.seen_items, p.tutor, p.zh_level, p.grade, p.native_zh, ...extraQs.map(q => (p.bg_extra || {})[q.id] ?? ""),
       p.nLeaves, p.leaveMs, p.fsExits, p.copy_attempts, p.n_reloads, p.honest, p.fb_time, p.fb_return, p.fb_unclear, p.fb_other, p.reasons.join("、"), p.save_failed || "", p.user_agent, p.screen])]));
   const rd = $("#resetDemo");
   if (rd) rd.addEventListener("click", () => {
@@ -426,12 +430,17 @@ function renderTexts() {
   $("#view-texts").innerHTML = `
     <div class="editor">
       <aside class="sidebar"><ul class="pagelist">${TEXT_PAGES.map(p => `<li><button class="setbtn" type="button" data-page="${p.page}" aria-current="${p.page === pg.page}">
-        <span class="id">${esc(p.name)}</span><span class="meta">${p.fields.some(f => f.key in S.texts) ? "已修改" : "預設文字"}${p.fields.some(f => /【待填/.test(txt(f.key))) ? "・有待填" : ""}</span></button></li>`).join("")}</ul></aside>
+        <span class="id">${esc(p.name)}</span><span class="meta">${p.fields.some(f => f.key in S.texts) || (p.questions && "bg_questions" in S.texts) ? "已修改" : "預設文字"}${p.fields.some(f => /【待填/.test(txt(f.key))) ? "・有待填" : ""}</span></button></li>`).join("")}</ul></aside>
       <div class="form">
         <div class="actions"><button class="btn" id="saveTexts" type="button">儲存頁面文字</button><span class="status" id="textStatus"></span></div>
         ${todo.length ? `<div class="errors">還有【待填】的內容：${esc(todo.join("、"))}。正式施測前請填好。</div>` : ""}
         ${pg.fields.map(f => `<label class="f"><span>${esc(f.label)}</span><textarea rows="${f.rows}" data-key="${f.key}">${esc(txt(f.key))}</textarea></label>
           <div class="actions"><button class="btn ghost small" type="button" data-reset="${f.key}" ${f.key in S.texts ? "" : "disabled"}>還原預設文字</button></div>`).join("")}
+        ${pg.questions ? `<h3>題目</h3>
+          <p class="hint">可以新增、刪除、調整順序，修改題目文字、題型、選項與是否必答。標示「鎖定」的題目會用在排除條件，不能刪除也不能改選項。<b>施測開始後請不要再改題目</b>，否則前後受試者的資料無法比較。</p>
+          <div id="qErrors"></div><div id="qEditor" style="display:grid;gap:10px"></div>
+          <div class="actions"><button class="btn ghost small" type="button" id="addQ">新增題目</button>
+            <button class="btn ghost small" type="button" id="resetQ" ${"bg_questions" in S.texts ? "" : "disabled"}>還原預設題目</button></div>` : ""}
         <p class="hint">格式：空一行分段；「# 」大標題、「## 」小標題；每行以「- 」開頭為條列；<code>**粗體**</code>、<code>__底線__</code>；
           <code>{{YEARS}}</code>＝${esc(YEARS_TXT)}、<code>{{SET_MINUTES}}</code>＝${esc(APP_CONFIG.SET_MINUTES_HINT || "")}、<code>{{N_SETS}}</code>＝題組數、<code>{{N}}</code>＝未作答題數（只用在確認視窗）。
           <code>【待填：…】</code> 會以醒目底色標示。</p>
@@ -448,13 +457,72 @@ function renderTexts() {
     mark(true); textPreview(pg.page);
   }));
   $("#view-texts").querySelectorAll("[data-reset]").forEach(b => b.addEventListener("click", () => { delete S.texts[b.dataset.reset]; TS.dirty = true; renderTexts(); }));
+  if (pg.questions) renderQEditor(() => { mark(true); textPreview(pg.page); });
   $("#saveTexts").addEventListener("click", async () => {
+    const errs = qErrors();
+    if ($("#qErrors")) $("#qErrors").innerHTML = errs.length ? `<div class="errors">背景問卷還不能儲存：<ul class="tight">${errs.map(e => `<li>${esc(e)}</li>`).join("")}</ul></div>` : "";
+    if (errs.length) { TS.page = "background"; if (pg.page !== "background") renderTexts(); return; }
     const btn = $("#saveTexts"); btn.disabled = true; btn.textContent = "儲存中…";
     try { await API.saveTexts(S.key, S.texts); TS.dirty = false; renderTexts(); $("#textStatus").textContent = "已儲存"; $("#textStatus").className = "status saved"; }
     catch (e) { $("#textStatus").textContent = "儲存失敗：" + e.message; $("#textStatus").className = "status dirty"; btn.disabled = false; btn.textContent = "儲存頁面文字"; }
   });
   textPreview(pg.page);
 }
+/* 背景問卷題目編輯器：改動直接寫回 S.texts.bg_questions（JSON），與預設相同時刪除 */
+const curQs = () => bgQuestions({ ...DEFAULT_TEXTS, ...S.texts });
+const putQs = qs => {
+  const js = JSON.stringify(qs);
+  if (js === JSON.stringify(bgQuestions({}))) delete S.texts.bg_questions; else S.texts.bg_questions = js;
+};
+const optsToText = o => (o || []).join("\n");
+const textToOpts = t => t.split("\n").map(x => x.trim()).filter(Boolean);
+function qErrors() {
+  const errs = [];
+  curQs().forEach((q, n) => {
+    if (!String(q.label || "").trim()) errs.push(`第 ${n + 1} 題：沒有題目文字`);
+    if ((q.type === "single" || q.type === "multi") && (q.options || []).length < 2) errs.push(`第 ${n + 1} 題：選擇題至少要有 2 個選項`);
+  });
+  return errs;
+}
+function renderQEditor(changed) {
+  const qs = curQs();
+  $("#qEditor").innerHTML = qs.map((q, n) => `
+    <div class="itemed" data-n="${n}">
+      <header><b>第 ${n + 1} 題</b>${q.locked ? '<span class="pill wip">鎖定</span>' : ""}
+        <button class="btn ghost small" data-act="up" type="button" ${n === 0 ? "disabled" : ""} aria-label="上移">↑</button>
+        <button class="btn ghost small" data-act="down" type="button" ${n === qs.length - 1 ? "disabled" : ""} aria-label="下移">↓</button>
+        <button class="btn danger small" data-act="del" type="button" ${q.locked ? "disabled" : ""}>刪除</button></header>
+      <label class="f"><span>題目</span><textarea rows="2" data-k="label">${esc(q.label)}</textarea></label>
+      ${q.locked
+        ? `<p class="hint">${q.type === "years" ? `選項：依 ITEM_YEARS 自動產生（${esc(examYearOptions(APP_CONFIG).join("、"))}），可複選` : `選項：${esc((q.options || []).join("、"))}（${esc(BG_TYPES[q.type])}）`}。排除條件會用到這題。</p>`
+        : `<div class="row" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+            <label class="f"><span>題型</span><select data-k="type">${["single", "multi", "text"].map(t => `<option value="${t}" ${q.type === t ? "selected" : ""}>${BG_TYPES[t]}</option>`).join("")}</select></label>
+            <label class="check" style="align-self:end"><input type="checkbox" data-k="required" ${q.required !== false ? "checked" : ""}> 必答</label>
+          </div>
+          ${q.type === "text" ? "" : `<label class="f"><span>選項（一行一個）</span><textarea rows="${Math.max(2, (q.options || []).length)}" data-k="options">${esc(optsToText(q.options))}</textarea></label>`}`}
+      <p class="hint">資料欄位：${BG_COLUMNS.includes(q.id) ? `Sessions 的 <code>${esc(q.id)}</code>` : `Sessions 的 <code>bg_extra</code> 中的 <code>${esc(q.id)}</code>`}</p>
+    </div>`).join("");
+  const update = fn => { const list = curQs(); fn(list); putQs(list); changed(); };
+  $("#qEditor").querySelectorAll(".itemed").forEach(card => {
+    const n = +card.dataset.n;
+    card.querySelector("[data-k=label]").addEventListener("input", e => update(l => { l[n].label = e.target.value; }));
+    card.querySelector("[data-k=type]")?.addEventListener("change", e => { update(l => { l[n].type = e.target.value; if (e.target.value !== "text" && !(l[n].options || []).length) l[n].options = ["是", "否"]; }); renderQEditor(changed); });
+    card.querySelector("[data-k=required]")?.addEventListener("change", e => update(l => { l[n].required = e.target.checked; }));
+    card.querySelector("[data-k=options]")?.addEventListener("input", e => update(l => { l[n].options = textToOpts(e.target.value); }));
+    card.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => {
+      update(l => {
+        if (b.dataset.act === "del") l.splice(n, 1);
+        if (b.dataset.act === "up") [l[n - 1], l[n]] = [l[n], l[n - 1]];
+        if (b.dataset.act === "down") [l[n + 1], l[n]] = [l[n], l[n + 1]];
+      });
+      renderQEditor(changed);
+    }));
+  });
+  $("#addQ").onclick = () => { update(l => l.push({ id: "q_" + Date.now().toString(36), type: "single", label: "", options: ["是", "否"], required: true })); renderQEditor(changed); };
+  $("#resetQ").onclick = () => { delete S.texts.bg_questions; changed(); renderQEditor(changed); };
+  $("#resetQ").disabled = !("bg_questions" in S.texts);
+}
+
 /* 預覽用的是受試者頁同一份版型（texts.js 的 PAGE_HTML） */
 function textPreview(page) {
   const T = { ...DEFAULT_TEXTS, ...S.texts };

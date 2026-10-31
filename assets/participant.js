@@ -155,14 +155,21 @@
     preStage = "background"; drawSteps();
     show(PAGE_HTML.background(T, V, CFG));
     const form = app.querySelector("form");
-    const boxes = [...form.querySelectorAll("#yearOpts input")], hidden = form.querySelector("input[name=exam_year]");
-    const sync = () => {
-      const picked = boxes.filter(b => b.checked).map(b => b.value);
-      hidden.value = picked.join("、");
-      boxes[0].setCustomValidity(picked.length ? "" : "請至少勾選一個年度");
-    };
-    boxes.forEach(b => b.addEventListener("change", sync)); sync();
-    const answers = await formSubmit(form);
+    // 複選題：勾選的值以「、」串起來放進同名隱藏欄位；必答時至少要勾一個
+    form.querySelectorAll(".multi").forEach(group => {
+      const boxes = [...group.querySelectorAll("input[type=checkbox]")], hidden = form.querySelector(`input[type=hidden][name="${CSS.escape(group.dataset.id)}"]`);
+      const sync = () => {
+        const picked = boxes.filter(b => b.checked).map(b => b.value);
+        hidden.value = picked.join("、");
+        if (boxes[0]) boxes[0].setCustomValidity(group.dataset.required === "true" && !picked.length ? "請至少勾選一項" : "");
+      };
+      boxes.forEach(b => b.addEventListener("change", sync)); sync();
+    });
+    const raw = await formSubmit(form);
+    // 內建題目存在 Sessions 同名欄位；管理者新增的題目放在 bg_extra
+    const answers = {}, extra = {};
+    Object.entries(raw).forEach(([k, v]) => { (BG_COLUMNS.includes(k) ? answers : extra)[k] = v; });
+    if (Object.keys(extra).length) answers.bg_extra = extra;
     const btn = form.querySelector("button[type=submit]"); btn.disabled = true; btn.textContent = "載入中…";
     let booklet;
     try {

@@ -39,15 +39,9 @@ const TEXT_PAGES = [
 研究者：【待填：姓名、Email】
 指導教授：【待填：姓名、Email】` },
     { key: "consent_agree", label: "勾選同意的文字", rows: 1, def: "我已閱讀上述說明，同意參與本研究。" }] },
-  { page: "background", name: "背景問卷", fields: [
-    { key: "bg_title", label: "標題", rows: 1, def: "背景資料" },
-    { key: "bg_exam_year", label: "第 1 題", rows: 1, def: "你參加學測的年度（可複選）" },
-    { key: "bg_retake", label: "第 2 題", rows: 1, def: "你是否曾重考或再次參加學測？" },
-    { key: "bg_seen", label: "第 3 題", rows: 2, def: "你是否看過{{YEARS}}學年度學測國文的試題或解析（例如補習班教材、網路解析）？" },
-    { key: "bg_tutor", label: "第 4 題", rows: 1, def: "你是否擔任過國文家教或相關備課工作？" },
-    { key: "bg_level", label: "第 5 題", rows: 2, def: "你在學測國文考科的成績落在哪個級距？（參加過多次者，填拿過最高的一次）" },
-    { key: "bg_grade", label: "第 6 題", rows: 1, def: "你目前的年級" },
-    { key: "bg_native", label: "第 7 題", rows: 1, def: "中文是否為你的母語？" }] },
+  // 背景問卷的題目另外存在 bg_questions（見下方 DEFAULT_BG_QUESTIONS），管理者頁可以增刪題目
+  { page: "background", name: "背景問卷", questions: true, fields: [
+    { key: "bg_title", label: "標題", rows: 1, def: "背景資料" }] },
   { page: "instructions", name: "作答說明", fields: [
     { key: "instructions", label: "說明", rows: 14, def:
 `# 作答說明
@@ -94,6 +88,34 @@ const TEXT_PAGES = [
     { key: "leave_warning", label: "離開頁面前的提醒（部分瀏覽器不顯示自訂文字）", rows: 1, def: "作答尚未完成，確定要離開嗎？" }] }
 ];
 const DEFAULT_TEXTS = Object.fromEntries(TEXT_PAGES.flatMap(p => p.fields.map(f => [f.key, f.def])));
+
+/* ---------- 背景問卷題目（管理者頁可增刪、改字、改選項、調整順序）----------
+   type：years（學測年度，可複選，選項依 ITEM_YEARS 自動產生）、single（單選）、multi（複選）、text（簡答）
+   locked：排除條件會用到的題目，不能刪除、不能改選項（題目文字可以改）
+   內建題目（id 在 BG_COLUMNS 裡）的答案存在 Sessions 同名欄位；新增的題目存在 Sessions 的 bg_extra 欄（JSON） */
+const BG_COLUMNS = ["exam_year", "retake", "seen_items", "tutor", "zh_level", "grade", "native_zh"];
+const DEFAULT_BG_QUESTIONS = [
+  { id: "exam_year", type: "years", label: "你參加學測的年度（可複選）", required: true, locked: true },
+  { id: "retake", type: "single", label: "你是否曾重考或再次參加學測？", options: ["是", "否"], required: true },
+  { id: "seen_items", type: "single", label: "你是否看過{{YEARS}}學年度學測國文的試題或解析（例如補習班教材、網路解析）？", options: ["是", "否", "不確定"], required: true, locked: true },
+  { id: "tutor", type: "single", label: "你是否擔任過國文家教或相關備課工作？", options: ["是", "否"], required: true },
+  { id: "zh_level", type: "single", label: "你在學測國文考科的成績落在哪個級距？（參加過多次者，填拿過最高的一次）", options: ["頂標", "前標", "均標", "後標", "底標", "底標以下", "不記得了"], required: true },
+  { id: "grade", type: "single", label: "你目前的年級", options: ["大一", "大二", "大三", "大四", "大五以上", "研究所", "其他"], required: true },
+  { id: "native_zh", type: "single", label: "中文是否為你的母語？", options: ["是", "否"], required: true }
+];
+const BG_TYPES = { single: "單選", multi: "複選", text: "簡答", years: "學測年度（自動選項）" };
+/* 目前使用的題目：管理者存過就用存的版本；鎖定的題目一定存在，且選項固定為預設 */
+function bgQuestions(T) {
+  let qs = null;
+  try { qs = T.bg_questions ? JSON.parse(T.bg_questions) : null; } catch (e) { qs = null; }
+  if (!Array.isArray(qs) || !qs.length) qs = JSON.parse(JSON.stringify(DEFAULT_BG_QUESTIONS));
+  DEFAULT_BG_QUESTIONS.filter(d => d.locked).forEach(d => {
+    const q = qs.find(x => x.id === d.id);
+    if (!q) qs.unshift(JSON.parse(JSON.stringify(d)));
+    else Object.assign(q, { type: d.type, options: d.options, locked: true, required: true });
+  });
+  return qs;
+}
 const textVars = (cfg, extra = {}) => {
   const ys = (cfg.ITEM_YEARS || []).map(String);
   return { YEARS: ys.length > 1 ? ys.slice(0, -1).join("、") + "或" + ys[ys.length - 1] : ys.join(""), SET_MINUTES: cfg.SET_MINUTES_HINT || "8–10", MIN_WIDTH: cfg.MIN_WIDTH || 900, ...extra };
@@ -105,13 +127,7 @@ const examYearOptions = cfg => {
   const out = []; for (let y = min; y <= max; y++) out.push(`${y}學年度`);
   return [...out, "其他"];
 };
-const BG_OPTIONS = {
-  retake: ["是", "否"], seen_items: ["是", "否", "不確定"], tutor: ["是", "否"],
-  zh_level: ["頂標", "前標", "均標", "後標", "底標", "底標以下", "不記得了"],
-  grade: ["大一", "大二", "大三", "大四", "大五以上", "研究所", "其他"],
-  native_zh: ["是", "否"],
-  honest: ["是，全程獨立作答", "否"], fb_time: ["足夠", "勉強足夠", "不夠"], fb_return: ["曾經想過", "沒有"]
-};
+const BG_OPTIONS = { honest: ["是，全程獨立作答", "否"], fb_time: ["足夠", "勉強足夠", "不夠"], fb_return: ["曾經想過", "沒有"] };
 
 /* 各頁的 HTML（受試者頁與管理者預覽共用）。T＝文字、V＝變數 */
 const radios = (name, opts, required = true) => `<div class="opts">${opts.map(o => `<label><input type="radio" name="${name}" value="${esc(o)}"${required ? " required" : ""}> ${esc(o)}</label>`).join("")}</div>`;
@@ -123,13 +139,7 @@ const PAGE_HTML = {
     <button class="btn center" type="submit">同意並繼續</button></form>`,
   background: (T, V, cfg) => `<form class="stack"><div class="panel">
       <h2>${inline(T.bg_title)}</h2>
-      ${fieldQ(1, renderTextInline(T.bg_exam_year, V), `<div class="opts" id="yearOpts">${examYearOptions(cfg).map(y => `<label><input type="checkbox" value="${y}"> ${y}</label>`).join("")}</div><input type="hidden" name="exam_year" value="">`)}
-      ${fieldQ(2, renderTextInline(T.bg_retake, V), radios("retake", BG_OPTIONS.retake))}
-      ${fieldQ(3, renderTextInline(T.bg_seen, V), radios("seen_items", BG_OPTIONS.seen_items))}
-      ${fieldQ(4, renderTextInline(T.bg_tutor, V), radios("tutor", BG_OPTIONS.tutor))}
-      ${fieldQ(5, renderTextInline(T.bg_level, V), radios("zh_level", BG_OPTIONS.zh_level))}
-      ${fieldQ(6, renderTextInline(T.bg_grade, V), radios("grade", BG_OPTIONS.grade))}
-      ${fieldQ(7, renderTextInline(T.bg_native, V), radios("native_zh", BG_OPTIONS.native_zh))}
+      ${bgQuestions(T).map((q, n) => fieldQ(n + 1, renderTextInline(q.label, V), bgInput(q, cfg))).join("")}
     </div><button class="btn center" type="submit">下一步</button></form>`,
   instructions: (T, V) => `<div class="stack"><div class="panel wide">${renderText(T.instructions, V)}</div><button class="btn center" type="button" data-next>開始</button></div>`,
   practice_intro: (T, V) => `<div class="stack"><div class="panel">${renderText(T.practice_intro, V)}</div><button class="btn center" type="button" data-next>開始練習</button></div>`,
@@ -160,6 +170,13 @@ const PAGE_HTML = {
   already_done: (T, V) => `<div class="panel">${renderText(T.already_done, V)}${V.DEMO ? '<p class="muted">示範模式：<button class="btn ghost small" type="button" data-reset>清除這台電腦的作答紀錄</button></p>' : ""}</div>`,
   resume: (T, V) => `<div class="stack"><div class="panel">${renderText(T.resume, V)}</div><button class="btn center" type="button" data-next>繼續作答</button></div>`
 };
+/* 背景問卷一題的作答欄：複選題的勾選框不設 name，選到的值以「、」串起來放在同名的隱藏欄位 */
+function bgInput(q, cfg) {
+  const opts = q.type === "years" ? examYearOptions(cfg) : (q.options || []);
+  if (q.type === "single") return radios(q.id, opts, q.required !== false);
+  if (q.type === "text") return `<textarea name="${esc(q.id)}" rows="2"${q.required !== false ? " required" : ""}></textarea>`;
+  return `<div class="opts multi" data-id="${esc(q.id)}" data-required="${q.required !== false}">${opts.map(o => `<label><input type="checkbox" value="${esc(o)}"> ${esc(o)}</label>`).join("")}</div><input type="hidden" name="${esc(q.id)}" value="">`;
+}
 /* 單行文字：只代入變數與行內標記 */
 function renderTextInline(src, vars = {}) {
   return inline(String(src ?? "").replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars ? String(vars[k]) : m)))
