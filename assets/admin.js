@@ -1,6 +1,8 @@
-/* 管理者版：題目編輯（即時預覽）＋收集資料（試題分析、受試者列表、CSV 下載） */
+/* 管理者版：題目編輯（即時預覽）＋頁面文字（即時預覽）＋收集資料（試題分析、受試者列表、CSV 下載） */
 const $ = s => document.querySelector(s);
-const S = { key: "", sets: [], cur: 0, dirty: false, data: null };
+const S = { key: "", sets: [], images: {}, texts: {}, cur: 0, dirty: false, data: null };
+const YEARS = (APP_CONFIG.ITEM_YEARS || []).map(Number);
+const YEARS_TXT = textVars(APP_CONFIG).YEARS;
 const ss = {
   get(k) { try { return sessionStorage.getItem(k) || ""; } catch (e) { return ""; } },
   set(k, v) { try { v ? sessionStorage.setItem(k, v) : sessionStorage.removeItem(k); } catch (e) {} }
@@ -27,16 +29,18 @@ async function login(key) {
 $("#loginBtn").addEventListener("click", () => login($("#key").value.trim()));
 $("#key").addEventListener("keydown", e => { if (e.key === "Enter") login($("#key").value.trim()); });
 $("#logout").addEventListener("click", () => { ss.set("nstc_admin_key", ""); location.reload(); });
-window.addEventListener("beforeunload", e => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", e => { if (S.dirty || TS.dirty) { e.preventDefault(); e.returnValue = ""; } });
 
 function showTab(t) {
-  $("#view-edit").hidden = t !== "edit";
-  $("#view-data").hidden = t !== "data";
-  $("#tab-edit").setAttribute("aria-selected", String(t === "edit"));
-  $("#tab-data").setAttribute("aria-selected", String(t === "data"));
+  ["edit", "texts", "data"].forEach(k => {
+    $("#view-" + k).hidden = t !== k;
+    $("#tab-" + k).setAttribute("aria-selected", String(t === k));
+  });
   if (t === "data") renderData();
+  if (t === "texts") renderTexts();
 }
 $("#tab-edit").addEventListener("click", () => showTab("edit"));
+$("#tab-texts").addEventListener("click", () => showTab("texts"));
 $("#tab-data").addEventListener("click", async () => { await loadAll(true); showTab("data"); });
 
 async function loadAll(dataOnly) {
@@ -44,6 +48,8 @@ async function loadAll(dataOnly) {
   S.data = all;
   if (!dataOnly || !S.sets.length) {
     S.sets = JSON.parse(JSON.stringify(all.sets || []));
+    S.images = { ...(all.images || {}) };
+    S.texts = { ...(all.texts || {}) };
     S.cur = Math.min(S.cur, Math.max(0, S.sets.length - 1));
     renderEditor();
   }
@@ -52,7 +58,11 @@ async function loadAll(dataOnly) {
 /* ================= 題目編輯 ================= */
 const sorted = () => S.sets.map((s, i) => ({ s, i })).sort((a, b) => String(a.s.booklet).localeCompare(String(b.s.booklet)) || (a.s.order || 0) - (b.s.order || 0));
 const passageToText = p => (p || []).join("\n\n");
-const textToPassage = t => t.split(/\n\s*\n/).map(x => x.replace(/\s*\n\s*/g, "").trim()).filter(Boolean);
+const textToPassage = (t, keep) => t.replace(/\r/g, "").split(/\n\s*\n/).map(x => {
+  const lines = x.split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length && lines.every(l => l.startsWith("|"))) return lines.join("\n");   // 表格一律保留換行
+  return keep ? lines.join("\n") : lines.join("");
+}).filter(Boolean);
 const nextItemId = set => { let n = 1; const ids = new Set(set.items.map(i => i.id)); while (ids.has("q" + n)) n++; return "q" + n; };
 
 function markDirty(v = true) {
@@ -81,12 +91,9 @@ function renderPreview() {
     if (!set) { $("#preview").innerHTML = '<p class="muted">選擇或新增一個題組。</p>'; return; }
     const inBk = S.sets.filter(s => s.booklet === set.booklet && s.active !== false).sort((a, b) => (a.order || 0) - (b.order || 0));
     const idx = Math.max(0, inBk.indexOf(set));
-    $("#preview").innerHTML = renderSet(set, { idx, total: inBk.length || 1, startNo: inBk.includes(set) ? startNoFor(set, inBk) : 1, showSource: true });
+    const label = String(set.booklet) === PRACTICE_BOOKLET ? "練習題組" : null;
+    $("#preview").innerHTML = renderSet(set, { idx, total: inBk.length || 1, startNo: inBk.includes(set) ? startNoFor(set, inBk) : 1, showSource: true, label, images: S.images });
     attachHighlighter($("#preview .set-screen"));
-    $("#preview .set-screen").addEventListener("click", e => {
-      const f = e.target.closest(".flag");
-      if (f) f.setAttribute("aria-pressed", String(f.getAttribute("aria-pressed") !== "true"));
-    });
     fitPreview();
   }, 120);
 }
@@ -95,7 +102,7 @@ function fitPreview() {
   const paper = $("#preview .paper");
   if (!paper) return;
   const base = APP_CONFIG.EXAM_FONT_PX || 17;
-  const natural = 49.7 * base + 2;                       // 版心 42.5em + 左右邊界 7.2em + 邊框
+  const natural = 48.5 * base + 2;                       // 版心 42.5em + 左右邊界 6em + 邊框
   const avail = $("#preview").clientWidth - 28;          // 扣掉預覽框內距
   const scale = Math.min(1, avail / natural);
   paper.style.fontSize = (base * scale).toFixed(2) + "px";
@@ -108,7 +115,7 @@ function renderEditor() {
   renderSetList();
   const set = S.sets[S.cur];
   if (!set) {
-    $("#form").innerHTML = `<p class="muted">還沒有題組。按左側「新增題組」開始，或先載入兩個示範題組看看格式。</p>
+    $("#form").innerHTML = `<p class="muted">還沒有題組。按左側「新增題組」開始，或先載入示範題組看看格式。</p>
       <button class="btn ghost small" id="loadDemo" type="button" style="justify-self:start">載入示範題組</button>`;
     $("#loadDemo").addEventListener("click", () => { S.sets = JSON.parse(JSON.stringify(DEMO_SETS)); S.cur = 0; markDirty(); renderEditor(); });
     renderPreview(); return;
@@ -118,13 +125,18 @@ function renderEditor() {
     <div id="errors"></div>
     <div class="row">
       <label class="f"><span>題組代號</span><input type="text" id="f_set_id" value="${esc(set.set_id)}" placeholder="例：114-R1"></label>
-      <label class="f"><span>題本</span><input type="text" id="f_booklet" value="${esc(set.booklet)}" placeholder="A 或 B"></label>
+      <label class="f"><span>題本</span><input type="text" id="f_booklet" value="${esc(set.booklet)}" placeholder="A、B 或 練習"></label>
       <label class="f"><span>順序</span><input type="number" id="f_order" min="1" value="${esc(set.order)}"></label>
     </div>
     <label class="check"><input type="checkbox" id="f_active" ${set.active !== false ? "checked" : ""}> 啟用（取消勾選後受試者不會看到這個題組）</label>
     <label class="f"><span>來源說明</span><input type="text" id="f_source" value="${esc(set.source)}" placeholder="例：114學年度學測國文 第21–22題"></label>
-    <label class="f"><span>文章</span><textarea id="f_passage" rows="10">${esc(passageToText(set.passage))}</textarea>
-      <span class="hint">段落之間空一行。從 PDF 貼上時，段落內的換行會自動合併。</span></label>
+    <label class="check"><input type="checkbox" id="f_keep" ${set.keep_breaks ? "checked" : ""}> 保留換行（新詩、古詩等需要照原本分行的文章）</label>
+    <label class="f"><span>文章</span><textarea id="f_passage" rows="12">${esc(passageToText(set.passage))}</textarea>
+      <span class="hint">段落之間空一行。沒勾「保留換行」時，從 PDF 貼上的段落內換行會自動合併。<br>
+      標記：<code>__文字__</code> 底線、<code>**文字**</code> 粗體、段落開頭 <code>【甲】</code> 多文本標籤、段落開頭 <code>注：</code> 注釋、
+      每行以 <code>|</code> 開頭為表格（<code>| 格 | 格 |</code>，格子開頭加 <code>!</code> 為標題格）、圖片用下方按鈕插入。題幹與選項也可以用底線、粗體。</span></label>
+    <div class="actions"><label class="btn ghost small"><input type="file" id="f_img" accept="image/*" hidden>插入圖片</label>
+      <span class="hint">圖片會縮到最寬 1200px 後存進試算表，並在文章游標處插入 <code>![圖說](img:代號)</code>。</span></div>
     <div id="itemEds" style="display:grid;gap:10px"></div>
     <div class="actions">
       <button class="btn ghost small" id="addItem" type="button">新增題目</button>
@@ -138,7 +150,18 @@ function renderEditor() {
   bind("#f_order", t => set.order = Number(t.value) || 0);
   $("#f_active").addEventListener("change", e => { set.active = e.target.checked; markDirty(); renderPreview(); renderSetList(); });
   bind("#f_source", t => set.source = t.value);
-  bind("#f_passage", t => set.passage = textToPassage(t.value));
+  bind("#f_passage", t => set.passage = textToPassage(t.value, set.keep_breaks));
+  $("#f_keep").addEventListener("change", e => { set.keep_breaks = e.target.checked; set.passage = textToPassage($("#f_passage").value, set.keep_breaks); markDirty(); renderPreview(); });
+  $("#f_img").addEventListener("change", async e => {
+    const file = e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    const id = "i" + Date.now().toString(36);
+    S.images[id] = await shrinkImage(file);
+    const ta = $("#f_passage"), at = ta.selectionStart ?? ta.value.length;
+    ta.value = ta.value.slice(0, at) + `\n\n![](img:${id})\n\n` + ta.value.slice(at);
+    set.passage = textToPassage(ta.value, set.keep_breaks);
+    markDirty(); renderPreview();
+  });
   $("#save").addEventListener("click", save);
   $("#addItem").addEventListener("click", () => { set.items.push({ id: nextItemId(set), stem: "", options: ["", "", "", ""], answer: "" }); markDirty(); renderItems(); renderPreview(); renderSetList(); });
   $("#dupSet").addEventListener("click", () => {
@@ -193,6 +216,30 @@ $("#addSet").addEventListener("click", () => {
   S.cur = S.sets.length - 1; markDirty(); renderEditor(); $("#f_set_id").focus();
 });
 
+/* 上傳的圖片縮到最寬 1200px，存成 data URL（PNG 較清楚；太大時改用 JPEG） */
+function shrinkImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1200 / img.width);
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      let url = c.toDataURL("image/png");
+      if (url.length > 400000) url = c.toDataURL("image/jpeg", 0.85);
+      URL.revokeObjectURL(img.src); resolve(url);
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+// 存檔時只送出題組文章裡用到的圖片
+const usedImages = () => {
+  const ids = new Set();
+  S.sets.forEach(s => (s.passage || []).forEach(p => { for (const m of String(p).matchAll(/\(img:([^)\s]+)\)/g)) ids.add(m[1]); }));
+  return Object.fromEntries([...ids].filter(id => S.images[id]).map(id => [id, S.images[id]]));
+};
+
 function validate() {
   const errs = [], ids = new Set();
   S.sets.forEach(s => {
@@ -217,7 +264,7 @@ async function save() {
   if (errs.length) return;
   const btn = $("#save"); btn.disabled = true; btn.textContent = "儲存中…";
   try {
-    await API.saveSets(S.key, S.sets);
+    await API.saveSets(S.key, S.sets, usedImages());
     markDirty(false);
   } catch (e) {
     $("#errors").innerHTML = `<div class="errors">儲存失敗：${esc(e.message)}。請確認網路連線後再試一次。</div>`;
@@ -225,13 +272,16 @@ async function save() {
 }
 
 /* ================= 收集資料 ================= */
-const F = { maxAwaySec: 30, useAway: true, useSeen: true, useSaveFail: true };
+const F = { maxAwaySec: 30, useAway: true, useSeen: true, useYear: true, useSaveFail: true, useHonest: false };
+// 參加學測的年度與施測試題相同（例如預試時勾選 114 或 115 學年度）
+const tookItemYear = s => (String(s.exam_year || "").match(/\d{3}/g) || []).map(Number).some(y => YEARS.includes(y));
 const fmtTime = t => { if (!t) return "—"; const d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleString("zh-TW", { hour12: false }); };
 const sec = ms => ms == null || ms === "" ? "—" : (ms / 1000).toFixed(1);
 const pct = x => x == null || isNaN(x) ? "—" : x.toFixed(2);
 
 function analyse() {
-  const { sets, sessions, responses } = S.data;
+  const { sessions, responses } = S.data;
+  const sets = S.data.sets.filter(s => String(s.booklet) !== PRACTICE_BOOKLET);   // 練習題組不分析
   // 每位受試者每個題組只取一筆：save_seq 最大（最新）的那筆（舊資料沒有 save_seq 時看 n_visits），相同時取後面的
   const byKey = new Map();
   const newer = (r, o) => (Number(r.save_seq) || 0) - (Number(o.save_seq) || 0) || (Number(r.n_visits) || 0) - (Number(o.n_visits) || 0);
@@ -253,7 +303,9 @@ function analyse() {
     const leaveMs = rs.reduce((a, r) => a + (Number(r.leave_ms) || 0), 0);
     const reasons = [];
     if (F.useAway && leaveMs > F.maxAwaySec * 1000) reasons.push(`離開 ${sec(leaveMs)} 秒`);
+    if (F.useYear && tookItemYear(s)) reasons.push(`學測年度為${YEARS_TXT}`);
     if (F.useSeen && s.seen_items === "是") reasons.push("看過試題");
+    if (F.useHonest && s.honest && s.honest !== BG_OPTIONS.honest[0]) reasons.push("自評未獨立作答");
     if (F.useSaveFail && s.save_failed) reasons.push("部分資料未能儲存");   // 受試者端重試後仍上傳失敗（見 save_failed 欄）
     return {
       ...s, rs, leaveMs, reasons,
@@ -283,7 +335,7 @@ function analyse() {
       const pOf = ids => { const a = rr.filter(r => ids.has(r.pid)); return a.length ? a.filter(r => (r.responses || {})[it.id] === it.answer).length / a.length : null; };
       const D = g ? pOf(hi) - pOf(lo) : null;
       const dist = Object.fromEntries(KEYS.map(k => [k, N ? ans.filter(a => a === k).length / N : null]));
-      rows.push({ booklet: set.booklet, set_id: set.set_id, no: n + 1, item_id: it.id, answer: it.answer, N, P, D, blank: N ? ans.filter(a => a === null).length / N : null, flagged: N ? rr.filter(r => (r.flags || []).includes(it.id)).length / N : null, dist, meanEff, meanRt, active: set.active !== false });
+      rows.push({ booklet: set.booklet, set_id: set.set_id, no: n + 1, item_id: it.id, answer: it.answer, N, P, D, blank: N ? ans.filter(a => a === null).length / N : null, dist, meanEff, meanRt, active: set.active !== false });
     });
   });
   return { people, included, rows, resp };
@@ -311,17 +363,19 @@ function renderData() {
     <div class="filters">
       <strong>排除條件</strong>
       <label class="check"><input type="checkbox" id="fAway" ${F.useAway ? "checked" : ""}> 作答期間累計離開超過 <input type="number" id="fAwaySec" min="0" value="${F.maxAwaySec}"> 秒</label>
-      <label class="check"><input type="checkbox" id="fSeen" ${F.useSeen ? "checked" : ""}> 看過114或115學年度試題</label>
+      <label class="check"><input type="checkbox" id="fYear" ${F.useYear ? "checked" : ""}> 學測年度為${YEARS_TXT}學年度</label>
+      <label class="check"><input type="checkbox" id="fSeen" ${F.useSeen ? "checked" : ""}> 看過${YEARS_TXT}學年度試題</label>
       <label class="check"><input type="checkbox" id="fSaveFail" ${F.useSaveFail ? "checked" : ""}> 部分資料未能儲存</label>
+      <label class="check"><input type="checkbox" id="fHonest" ${F.useHonest ? "checked" : ""}> 自評未獨立作答</label>
       <span class="muted">只有「已完成」且未被排除的受試者納入試題分析。</span>
     </div>
     <h2>試題分析</h2>
     <p class="muted">答對率＝答對人數 ÷ 作答人數（留空算答錯）；鑑別度＝題本總分前 27% 與後 27% 的答對率差，納入人數少於 4 人時不計算。</p>
     <div class="tablebox"><table>
-      <thead><tr><th>題本</th><th>題組</th><th>題號</th><th>答案</th><th>人數</th><th>答對率 P</th><th>鑑別度 D</th><th>留空率</th><th>標註不確定率</th>${KEYS.map(k => `<th>選 ${k}</th>`).join("")}<th>題組平均心力</th><th>題組平均作答（秒）</th></tr></thead>
+      <thead><tr><th>題本</th><th>題組</th><th>題號</th><th>答案</th><th>人數</th><th>答對率 P</th><th>鑑別度 D</th><th>留空率</th>${KEYS.map(k => `<th>選 ${k}</th>`).join("")}<th>題組平均心力</th><th>題組平均作答（秒）</th></tr></thead>
       <tbody>${A.rows.map(r => `<tr${r.active ? "" : ' class="excluded"'}><td>${esc(r.booklet)}</td><td>${esc(r.set_id)}</td><td class="n">${r.no}</td><td>${r.answer}</td><td class="n">${r.N}</td>
-        <td class="n">${pct(r.P)}</td><td class="n${r.D != null && r.D < 0.2 ? " low" : ""}">${pct(r.D)}</td><td class="n">${pct(r.blank)}</td><td class="n">${pct(r.flagged)}</td>
-        ${KEYS.map(k => `<td class="n">${pct(r.dist[k])}</td>`).join("")}<td class="n">${r.meanEff == null ? "—" : r.meanEff.toFixed(2)}</td><td class="n">${sec(r.meanRt)}</td></tr>`).join("") || `<tr><td colspan="15" class="muted">還沒有題目。</td></tr>`}</tbody>
+        <td class="n">${pct(r.P)}</td><td class="n${r.D != null && r.D < 0.2 ? " low" : ""}">${pct(r.D)}</td><td class="n">${pct(r.blank)}</td>
+        ${KEYS.map(k => `<td class="n">${pct(r.dist[k])}</td>`).join("")}<td class="n">${r.meanEff == null ? "—" : r.meanEff.toFixed(2)}</td><td class="n">${sec(r.meanRt)}</td></tr>`).join("") || `<tr><td colspan="14" class="muted">還沒有題目。</td></tr>`}</tbody>
     </table></div>
     <h2>受試者</h2>
     <div class="tablebox"><table>
@@ -336,27 +390,92 @@ function renderData() {
   $("#fAwaySec").addEventListener("change", e => { F.maxAwaySec = Number(e.target.value) || 0; renderData(); });
   $("#fSeen").addEventListener("change", e => { F.useSeen = e.target.checked; renderData(); });
   $("#fSaveFail").addEventListener("change", e => { F.useSaveFail = e.target.checked; renderData(); });
+  $("#fYear").addEventListener("change", e => { F.useYear = e.target.checked; renderData(); });
+  $("#fHonest").addEventListener("change", e => { F.useHonest = e.target.checked; renderData(); });
   $("#csvItems").addEventListener("click", () => download("試題分析.csv",
-    [["題本", "題組", "題號", "題目代碼", "正確答案", "人數", "答對率P", "鑑別度D", "留空率", "標註不確定率", ...KEYS.map(k => "選" + k), "題組平均心力", "題組平均作答秒數"],
-     ...A.rows.map(r => [r.booklet, r.set_id, r.no, r.item_id, r.answer, r.N, r.P, r.D, r.blank, r.flagged, ...KEYS.map(k => r.dist[k]), r.meanEff, r.meanRt == null ? "" : r.meanRt / 1000])]));
+    [["題本", "題組", "題號", "題目代碼", "正確答案", "人數", "答對率P", "鑑別度D", "留空率", ...KEYS.map(k => "選" + k), "題組平均心力", "題組平均作答秒數"],
+     ...A.rows.map(r => [r.booklet, r.set_id, r.no, r.item_id, r.answer, r.N, r.P, r.D, r.blank, ...KEYS.map(k => r.dist[k]), r.meanEff, r.meanRt == null ? "" : r.meanRt / 1000])]));
   $("#csvLong").addEventListener("click", () => {
     const setMap = Object.fromEntries(S.data.sets.map(s => [s.set_id, s]));
-    const out = [["受試者", "題本", "題組", "題組順序", "題目代碼", "作答", "標註不確定", "正確答案", "答對", "首次作答毫秒", "題組作答毫秒（累計）", "首次送出前作答毫秒", "進入題組次數", "心力耗費", "心力作答毫秒", "離開次數", "離開毫秒", "退出全螢幕", "畫記段數", "納入分析"]];
+    const out = [["受試者", "題本", "題組", "題組順序", "題目代碼", "作答", "正確答案", "答對", "首次作答毫秒", "題組作答毫秒", "進入題組次數（重新整理會增加）", "心力耗費", "心力作答毫秒", "離開次數", "離開毫秒", "退出全螢幕", "畫記段數", "納入分析"]];
     const inc = new Set(A.included.map(p => p.pid));
     A.resp.forEach(r => (setMap[r.set_id]?.items || Object.keys(r.responses || {}).map(id => ({ id }))).forEach(it => {
       const a = (r.responses || {})[it.id] ?? "";
-      out.push([r.pid, r.booklet, r.set_id, r.set_order, it.id, a, (r.flags || []).includes(it.id) ? 1 : 0, it.answer ?? "", (r.correct || {})[it.id] ? 1 : 0, (r.first_answer_ms || {})[it.id] ?? "", r.rt_ms, r.first_rt_ms ?? r.rt_ms, r.n_visits || 1, r.effort, r.effort_rt_ms, r.n_leaves, r.leave_ms, r.n_fullscreen_exits, (r.highlights || []).length, inc.has(r.pid) ? 1 : 0]);
+      out.push([r.pid, r.booklet, r.set_id, r.set_order, it.id, a, it.answer ?? "", (r.correct || {})[it.id] ? 1 : 0, (r.first_answer_ms || {})[it.id] ?? "", r.rt_ms, r.n_visits || 1, r.effort, r.effort_rt_ms, r.n_leaves, r.leave_ms, r.n_fullscreen_exits, (r.highlights || []).length, inc.has(r.pid) ? 1 : 0]);
     }));
     download("作答資料.csv", out);
   });
   $("#csvPeople").addEventListener("click", () => download("受試者.csv",
-    [["受試者", "題本", "狀態", "開始時間", "完成時間", "總時間毫秒", "得分", "題數", "學測年度", "重考", "看過試題", "國文家教", "離開次數", "離開毫秒", "退出全螢幕", "複製嘗試", "排除原因", "未能儲存的資料", "裝置", "螢幕"],
-     ...A.people.map(p => [p.pid, p.booklet, p.status, p.started_at, p.completed_at, p.total_ms, p.score, p.nItems, p.exam_year, p.retake, p.seen_items, p.tutor, p.nLeaves, p.leaveMs, p.fsExits, p.copy_attempts, p.reasons.join("、"), p.save_failed || "", p.user_agent, p.screen])]));
+    [["受試者", "題本", "狀態", "開始時間", "完成時間", "總時間毫秒", "得分", "題數", "學測年度", "重考", "看過試題", "國文家教", "國文級距", "年級", "中文母語",
+      "離開次數", "離開毫秒", "退出全螢幕", "複製嘗試", "重新整理次數", "獨立作答自評", "作答時間是否足夠", "是否想回到前面", "操作不清楚之處", "其他意見", "排除原因", "未能儲存的資料", "裝置", "螢幕"],
+     ...A.people.map(p => [p.pid, p.booklet, p.status, p.started_at, p.completed_at, p.total_ms, p.score, p.nItems, p.exam_year, p.retake, p.seen_items, p.tutor, p.zh_level, p.grade, p.native_zh,
+      p.nLeaves, p.leaveMs, p.fsExits, p.copy_attempts, p.n_reloads, p.honest, p.fb_time, p.fb_return, p.fb_unclear, p.fb_other, p.reasons.join("、"), p.save_failed || "", p.user_agent, p.screen])]));
   const rd = $("#resetDemo");
   if (rd) rd.addEventListener("click", () => {
     if (rd.dataset.confirm !== "1") { rd.dataset.confirm = "1"; rd.textContent = "確定清除？再按一次"; return; }
     API.resetDemo(); location.reload();
   });
+}
+
+/* ================= 頁面文字（受試者各頁的說明，可預覽）================= */
+const TS = { page: TEXT_PAGES[0].page, dirty: false };
+const txt = k => (k in S.texts ? S.texts[k] : DEFAULT_TEXTS[k]);
+function renderTexts() {
+  const pg = TEXT_PAGES.find(p => p.page === TS.page) || TEXT_PAGES[0];
+  const todo = TEXT_PAGES.filter(p => p.fields.some(f => /【待填/.test(txt(f.key)))).map(p => p.name);
+  $("#view-texts").innerHTML = `
+    <div class="editor">
+      <aside class="sidebar"><ul class="pagelist">${TEXT_PAGES.map(p => `<li><button class="setbtn" type="button" data-page="${p.page}" aria-current="${p.page === pg.page}">
+        <span class="id">${esc(p.name)}</span><span class="meta">${p.fields.some(f => f.key in S.texts) ? "已修改" : "預設文字"}${p.fields.some(f => /【待填/.test(txt(f.key))) ? "・有待填" : ""}</span></button></li>`).join("")}</ul></aside>
+      <div class="form">
+        <div class="actions"><button class="btn" id="saveTexts" type="button">儲存頁面文字</button><span class="status" id="textStatus"></span></div>
+        ${todo.length ? `<div class="errors">還有【待填】的內容：${esc(todo.join("、"))}。正式施測前請填好。</div>` : ""}
+        ${pg.fields.map(f => `<label class="f"><span>${esc(f.label)}</span><textarea rows="${f.rows}" data-key="${f.key}">${esc(txt(f.key))}</textarea></label>
+          <div class="actions"><button class="btn ghost small" type="button" data-reset="${f.key}" ${f.key in S.texts ? "" : "disabled"}>還原預設文字</button></div>`).join("")}
+        <p class="hint">格式：空一行分段；「# 」大標題、「## 」小標題；每行以「- 」開頭為條列；<code>**粗體**</code>、<code>__底線__</code>；
+          <code>{{YEARS}}</code>＝${esc(YEARS_TXT)}、<code>{{SET_MINUTES}}</code>＝${esc(APP_CONFIG.SET_MINUTES_HINT || "")}、<code>{{N_SETS}}</code>＝題組數、<code>{{N}}</code>＝未作答題數（只用在確認視窗）。
+          <code>【待填：…】</code> 會以醒目底色標示。</p>
+      </div>
+      <div class="preview"><div class="cap"><span>受試者看到的畫面</span></div><div class="frame" id="textPreview"></div></div>
+    </div>`;
+  const status = $("#textStatus");
+  const mark = v => { TS.dirty = v; status.textContent = v ? "有未儲存的變更" : ""; status.className = "status " + (v ? "dirty" : ""); };
+  mark(TS.dirty);
+  $("#view-texts").querySelectorAll("[data-page]").forEach(b => b.addEventListener("click", () => { TS.page = b.dataset.page; renderTexts(); }));
+  $("#view-texts").querySelectorAll("textarea[data-key]").forEach(ta => ta.addEventListener("input", () => {
+    const k = ta.dataset.key;
+    if (ta.value === DEFAULT_TEXTS[k]) delete S.texts[k]; else S.texts[k] = ta.value;
+    mark(true); textPreview(pg.page);
+  }));
+  $("#view-texts").querySelectorAll("[data-reset]").forEach(b => b.addEventListener("click", () => { delete S.texts[b.dataset.reset]; TS.dirty = true; renderTexts(); }));
+  $("#saveTexts").addEventListener("click", async () => {
+    const btn = $("#saveTexts"); btn.disabled = true; btn.textContent = "儲存中…";
+    try { await API.saveTexts(S.key, S.texts); TS.dirty = false; renderTexts(); $("#textStatus").textContent = "已儲存"; $("#textStatus").className = "status saved"; }
+    catch (e) { $("#textStatus").textContent = "儲存失敗：" + e.message; $("#textStatus").className = "status dirty"; btn.disabled = false; btn.textContent = "儲存頁面文字"; }
+  });
+  textPreview(pg.page);
+}
+/* 預覽用的是受試者頁同一份版型（texts.js 的 PAGE_HTML） */
+function textPreview(page) {
+  const T = { ...DEFAULT_TEXTS, ...S.texts };
+  const nSets = Math.max(0, ...[...new Set(S.sets.map(s => String(s.booklet)))].filter(b => b !== PRACTICE_BOOKLET)
+    .map(b => S.sets.filter(s => String(s.booklet) === b && s.active !== false).length));
+  const V = textVars(APP_CONFIG, { N_SETS: nSets, N: 2 });
+  const html = {
+    device: () => PAGE_HTML.device(T, V, false),
+    consent: () => PAGE_HTML.consent(T, V),
+    background: () => PAGE_HTML.background(T, V, APP_CONFIG),
+    instructions: () => PAGE_HTML.instructions(T, V),
+    practice: () => PAGE_HTML.practice_intro(T, V) + "<hr>" + PAGE_HTML.practice_done(T, V),
+    confirm: () => `<div class="modal-box" style="margin:0 auto"><p>${renderTextInline(T.confirm_blank, V)}</p><p class="muted">（以上為還有 2 題未作答時）</p><hr><p>${renderTextInline(T.confirm_all, V)}</p></div>`,
+    effort: () => PAGE_HTML.effort(T, V),
+    post: () => PAGE_HTML.post(T, V),
+    complete: () => PAGE_HTML.complete(T, V, APP_CONFIG),
+    misc: () => PAGE_HTML.already_done(T, V) + "<hr>" + PAGE_HTML.resume(T, V) + `<hr><p class="fsbar" style="position:static">${esc(T.fullscreen_bar)}</p><p class="muted">離開頁面前的提醒：${esc(T.leave_warning)}</p>`
+  }[page];
+  $("#textPreview").innerHTML = html ? html() : "";
+  $("#textPreview").querySelectorAll("button").forEach(b => { b.type = "button"; });
+  $("#textPreview").querySelectorAll("form").forEach(f => f.addEventListener("submit", e => e.preventDefault()));
 }
 
 function download(name, rows) {

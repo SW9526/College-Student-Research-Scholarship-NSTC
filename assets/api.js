@@ -1,4 +1,18 @@
 /* 資料存取：有 API_URL 時連到 Google 試算表（Apps Script）；沒有時為示範模式，存在本機瀏覽器 */
+/* 練習題組：題本填「練習」的題組是所有受試者共用的練習；試算表裡沒有時用這個預設題組。練習不計分、不上傳 */
+const PRACTICE_BOOKLET = "練習";
+const DEFAULT_PRACTICE = {
+  set_id: "practice", booklet: PRACTICE_BOOKLET, order: 1, active: true, source: "練習題組（自編）",
+  passage: [
+    "清晨的公園裡，總有幾位長者在樹下打太極拳。他們的動作緩慢，看起來毫不費力，其實每一個轉身、每一次移步，都需要腿部肌肉持續出力，並且時時調整身體重心。",
+    "研究者發現，長期練習太極拳的人，單腳站立的時間明顯較長，跌倒的次數也較少。原因不在於力氣變大，而在於身體對重心變化的感知更加敏銳，能在失去平衡之前就察覺並修正。"
+  ],
+  items: [
+    { id: "q1", stem: "根據本文，太極拳看起來毫不費力，實際上：", options: ["只需要手臂出力", "需要腿部肌肉持續出力", "主要訓練心肺功能", "動作越快效果越好"], answer: "B" },
+    { id: "q2", stem: "長期練習太極拳的人較少跌倒，本文認為主要是因為：", options: ["腿部力氣變大", "身體較為柔軟", "對重心變化的感知更敏銳", "練習時特別小心"], answer: "C" }
+  ]
+};
+
 const DEMO_SETS = [
   {
     set_id: "demo-1", booklet: "A", order: 1, active: true,
@@ -72,7 +86,8 @@ const DEMO_SETS = [
       { id: "q1", stem: "本文所說翻譯詩歌的「兩難」，指的是：", options: ["字面忠實與音韻節奏難以兼顧", "譯者與原作者的意見不同", "詩歌的讀者越來越少", "不同語言的字數無法相同"], answer: "A" },
       { id: "q2", stem: "根據第二段，主張「翻譯是重新創作」的譯者認為好的譯詩應該：", options: ["與原作字字相符", "完全捨棄原作的意思", "讓讀者感受到相近的情緒與畫面", "只保留原作的韻腳"], answer: "C" }
     ]
-  }
+  },
+  { ...DEFAULT_PRACTICE }
 ];
 
 const API = (() => {
@@ -82,7 +97,7 @@ const API = (() => {
     get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
   };
-  const K = { sets: "nstc_demo_sets", sessions: "nstc_demo_sessions", responses: "nstc_demo_responses" };
+  const K = { sets: "nstc_demo_sets", sessions: "nstc_demo_sessions", responses: "nstc_demo_responses", texts: "nstc_demo_texts", images: "nstc_demo_images" };
   const DEMO_KEY = "demo";
 
   async function get(params) {
@@ -100,18 +115,23 @@ const API = (() => {
   }
   const demoSets = () => { let s = LS.get(K.sets, null); if (!s) { s = DEMO_SETS; LS.set(K.sets, s); } return s; };
   const now = () => new Date().toISOString();
+  const isFormal = s => s.active !== false && s.active !== "FALSE" && String(s.booklet) !== PRACTICE_BOOKLET;
 
   return {
     demo,
     /* ---- 受試者端 ---- */
-    async getSets() {
-      // 和正式版一樣不提供正確答案
-      if (demo) return demoSets().filter(s => s.active !== false).map(s => ({ ...s, items: s.items.map(({ answer, ...it }) => it) }));
-      return (await get({ action: "items" })).sets;
+    // 題組（不含正確答案）、頁面文字、圖片
+    async getContent() {
+      if (demo) return {
+        sets: demoSets().filter(s => s.active !== false).map(s => ({ ...s, items: s.items.map(({ answer, ...it }) => it) })),
+        texts: LS.get(K.texts, {}), images: LS.get(K.images, {})
+      };
+      const j = await get({ action: "items" });
+      return { sets: j.sets, texts: j.texts || {}, images: j.images || {} };
     },
     async assign() {
       if (demo) {
-        const booklets = [...new Set(demoSets().filter(s => s.active !== false).map(s => s.booklet))].sort();
+        const booklets = [...new Set(demoSets().filter(isFormal).map(s => s.booklet))].sort();
         const sessions = LS.get(K.sessions, []);
         const count = b => sessions.filter(s => s.booklet === b).length;
         const min = Math.min(...booklets.map(count));
@@ -121,7 +141,7 @@ const API = (() => {
       return (await post({ action: "assign" })).booklet;
     },
     async start(session) {
-      if (demo) { const a = LS.get(K.sessions, []); a.push({ ...session, started_at: now(), status: "started" }); LS.set(K.sessions, a); return; }
+      if (demo) { const a = LS.get(K.sessions, []); if (!a.some(x => x.pid === session.pid)) a.push({ ...session, started_at: now(), status: "started" }); LS.set(K.sessions, a); return; }
       await post({ action: "start", session });
     },
     async submitSet(row) {
@@ -144,13 +164,19 @@ const API = (() => {
       await post({ action: "login", key }); return true;
     },
     async getAll(key) {
-      if (demo) return { sets: demoSets(), sessions: LS.get(K.sessions, []), responses: LS.get(K.responses, []) };
+      if (demo) return { sets: demoSets(), sessions: LS.get(K.sessions, []), responses: LS.get(K.responses, []), texts: LS.get(K.texts, {}), images: LS.get(K.images, {}) };
       const j = await post({ action: "data", key });
-      return { sets: j.sets, sessions: j.sessions, responses: j.responses };
+      return { sets: j.sets, sessions: j.sessions, responses: j.responses, texts: j.texts || {}, images: j.images || {} };
     },
-    async saveSets(key, sets) {
-      if (demo) { LS.set(K.sets, sets); return; }
-      await post({ action: "saveSets", key, sets });
+    // images：題組用到的全部圖片 {代號: dataURL}，存檔時整批取代
+    async saveSets(key, sets, images) {
+      if (demo) { LS.set(K.sets, sets); LS.set(K.images, images || {}); return; }
+      await post({ action: "saveSets", key, sets, images: images || {} });
+    },
+    // texts：只存與預設不同的頁面文字
+    async saveTexts(key, texts) {
+      if (demo) { LS.set(K.texts, texts); return; }
+      await post({ action: "saveTexts", key, texts });
     },
     resetDemo() { Object.values(K).forEach(k => { try { localStorage.removeItem(k); } catch (e) {} }); }
   };

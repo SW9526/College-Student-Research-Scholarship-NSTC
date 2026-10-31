@@ -6,11 +6,21 @@ window.APP_CONFIG = {
   // 留空 = 示範模式：題目與作答資料只存在這台電腦的瀏覽器，方便先試用。
   API_URL: "https://script.google.com/macros/s/AKfycbwbm-Po-KYvvwlaYN1TbRkk4JLRiynDaSPFNP6QezlEkO1KNlMZ4V6UxFn0iyBPt7ThgQ/exec",
 
-  // 螢幕寬度低於此值（px）或使用手機時，不允許作答
+  // 施測試題所屬的學測年度。背景問卷「是否看過試題」的題目、學測年度選項（往前推 5 年），
+  // 以及管理者頁的排除條件（學測年度與試題相同、看過試題）都從這裡讀取。正式研究時改成 [115, 116]
+  ITEM_YEARS: [114, 115],
+
+  // 只能用電腦作答：螢幕寬度低於此值（px）、手機、平板或觸控為主的裝置都不允許作答
   MIN_WIDTH: 900,
 
-  // 酬謝領取表單網址（與作答資料分開保存）；留空則不顯示
-  REWARD_FORM_URL: "",
+  // 作答說明中「每個題組建議作答約 N 分鐘」的 N
+  SET_MINUTES_HINT: "8–10",
+
+  // 是否在畫面左上角顯示已用時間（評定心力時暫停）
+  SHOW_TIMER: true,
+
+  // 酬謝領取表單網址（與作答資料分開保存，非必填）；留空則不顯示
+  REWARD_FORM_URL: "https://forms.gle/yxz1MFTHMsQLUGyh7",
 
   // 是否在題組上方顯示「來源說明」（正式施測建議改為 false）
   SHOW_SOURCE_NOTE: false,

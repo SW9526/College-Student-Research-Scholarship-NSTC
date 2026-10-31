@@ -35,16 +35,15 @@ label{cursor:pointer}
 ul.tight{margin:0;padding-left:1.2em;display:grid;gap:4px}
 
 /* buttons */
-.jspsych-btn,.btn{font:inherit;font-weight:500;background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:6px;padding:9px 22px;cursor:pointer}
+.btn{font:inherit;font-weight:500;background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:6px;padding:9px 22px;cursor:pointer}
 .btn.ghost{background:transparent;color:var(--accent)}
 .btn.small{padding:4px 12px;font-size:.88rem}
 .btn.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
 .btn:disabled{opacity:.5;cursor:default}
-.jspsych-btn:focus-visible,.btn:focus-visible,.tool:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn:focus-visible,.tool:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* participant shell */
 #app{max-width:1180px;margin:0 auto}
-.jspsych-content-wrapper,.jspsych-content{width:100%}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:24px;display:grid;gap:14px;max-width:720px;margin:0 auto}
 .panel.wide{max-width:840px}                         /* 作答說明：加寬，避免最後一行只剩一個字加句號 */
 .panel p,.panel li{text-wrap:pretty}
@@ -53,44 +52,40 @@ ul.tight{margin:0;padding-left:1.2em;display:grid;gap:4px}
 .opts{display:flex;flex-wrap:wrap;gap:6px 18px}
 select,input[type=text],input[type=number],input[type=password],textarea{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);width:100%}
 textarea{resize:vertical;line-height:1.7}
-#jspsych-survey-html-form{display:grid;gap:14px}
-#jspsych-survey-html-form>input[type=submit]{justify-self:center;margin-top:6px}
-#jspsych-html-button-response-btngroup,.jspsych-html-button-response-btngroup{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:14px}
 .answered{justify-self:center;font-size:.88rem;color:var(--muted);font-variant-numeric:tabular-nums;margin-bottom:-8px}
 
-/* 進度圓圈：每個階段、每個題組各一個。題組圓圈依作答狀態上色，標註不確定的題組為琥珀色 */
+/* 進度圓圈：每個階段、每個題組各一個，只顯示進度 */
 .progress{max-width:1180px;margin:0 auto 16px}
 .steps{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:4px 0}
 .step{position:relative;display:grid;justify-items:center;gap:2px;min-width:58px}
 .step+.step::before{content:"";position:absolute;top:15px;right:calc(50% + 17px);width:calc(100% - 34px);height:2px;background:var(--line)}
-.step .dot{box-sizing:border-box;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:inherit;font-size:.82rem;font-weight:500;
-  font-variant-numeric:tabular-nums;border:2px solid var(--line);background:var(--surface);color:var(--muted);padding:0;line-height:1}
+.step.done+.step::before{background:var(--accent)}
+.step .dot{box-sizing:border-box;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:.82rem;font-weight:500;
+  font-variant-numeric:tabular-nums;border:2px solid var(--line);background:var(--surface);color:var(--muted);line-height:1}
 .step .lbl{font-size:.72rem;color:var(--muted);white-space:nowrap}
-.step.done .dot{border-color:var(--accent);color:var(--accent)}
-.step.partial .dot{border-color:var(--accent);color:var(--accent);background:linear-gradient(to top,var(--accent-soft) 50%,var(--surface) 50%)}
-.step.complete .dot{border-color:var(--accent);background:var(--accent);color:var(--accent-ink)}
-.step.flagged .dot{border-color:var(--flag);background:var(--flag);color:var(--flag-ink)}
-.step.current .dot{box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--ink)}
+.step.done .dot{border-color:var(--accent);background:var(--accent);color:var(--accent-ink)}
+.step.current .dot{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--ink)}
 .step.current .lbl{color:var(--ink);font-weight:700}
-button.dot{cursor:pointer}
-button.dot:hover{border-color:var(--ink)}
-button.dot:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
-/* 交卷確認：答案一覽，點題號回到該題 */
-.sheet{display:grid;gap:8px}
-.sheet-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.sheet-set{font-size:.85rem;color:var(--muted);min-width:4.5em}
-.cell{box-sizing:border-box;display:inline-grid;grid-template-columns:auto auto;align-items:baseline;gap:4px;min-width:3.4em;padding:3px 8px;border-radius:6px;
-  border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:.88rem;font-variant-numeric:tabular-nums}
-button.cell{cursor:pointer}
-button.cell:hover{border-color:var(--ink)}
-.cell .no{color:var(--muted);font-size:.78rem}
-.cell .v{font-weight:700}
-.cell.answered{border-color:var(--accent);background:var(--accent-soft)}
-.cell.blank .v{color:var(--muted);font-weight:400}
-.cell.flagged{border-color:var(--flag);box-shadow:inset 0 0 0 1px var(--flag);background:var(--flag-soft)}
-.legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:.82rem;color:var(--muted)}
-.legend .cell{min-width:1.4em;height:1.1em;padding:0;margin-right:-8px;vertical-align:middle}
+/* 頁面版型 */
+.stack{display:grid;gap:14px}
+.btn.center{justify-self:center}
+.actions.end{justify-content:flex-end}
+.consent h3{margin-top:4px}
+mark.todo{background:var(--flag-soft);color:var(--warn);border-radius:3px;padding:0 2px}
+.set-actions{display:grid;justify-items:center;gap:8px;margin-top:16px}
+.set-actions .answered{margin:0}
+
+/* 左上角已用時間（不要太醒目）、退出全螢幕的提示列 */
+.timer{position:fixed;top:6px;left:10px;z-index:30;font-size:.75rem;color:var(--muted);font-variant-numeric:tabular-nums;
+  background:color-mix(in srgb,var(--bg) 85%,transparent);border-radius:4px;padding:1px 6px;pointer-events:none}
+.fsbar{position:fixed;top:0;left:0;right:0;z-index:40;font:inherit;font-size:.9rem;font-weight:500;border:0;cursor:pointer;
+  background:var(--flag);color:var(--flag-ink);padding:8px 16px;text-align:center}
+
+/* 完成題組的確認視窗 */
+.modal{position:fixed;inset:0;z-index:50;background:rgba(15,23,30,.45);display:grid;place-items:center;padding:16px}
+.modal-box{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:22px 24px;max-width:440px;width:100%;display:grid;gap:18px;
+  box-shadow:0 10px 30px rgba(0,0,0,.25)}
 
 /* test screen (shared by participant + admin preview) */
 .set-screen{container-type:inline-size}
@@ -104,7 +99,7 @@ button.cell:hover{border-color:var(--ink)}
 /* 試題本「紙張」：尺寸以 em 表示，比例取自學測國綜試題本（A4、內文 11pt、行距約 17pt、版心約 42.5 字寬） */
 .paper{--paper:#ffffff;--paper-ink:#111111;--paper-line:#cfd6dd;--sel:#e3eef6;--sel-ink:#0b4a6b;
   background:var(--paper);color:var(--paper-ink);border:1px solid var(--line);border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.08);
-  max-width:calc(42.5em + 7.2em);margin:0 auto;padding:2.2em 4.2em 2.6em 3em;   /* 右邊界加寬 1.2em 放「不確定」鈕，版心寬度不變 */
+  max-width:calc(42.5em + 6em);margin:0 auto;padding:2.2em 3em 2.6em;
   font-family:"Times New Roman","DFKai-SB","BiauKai","標楷體","TW-Kai","LXGW WenKai TC","Kaiti TC",serif;line-height:1.55;text-align:justify}
 .paper .src{font-family:var(--f-ui);font-size:.75em;color:var(--warn);margin-bottom:.6em}
 .paper .grp{margin:0 0 .15em}
@@ -112,16 +107,19 @@ button.cell:hover{border-color:var(--ink)}
 .paper .passage{padding-left:1.67em;margin-bottom:.15em}
 .paper .passage p{text-indent:2em;margin:0}
 .paper .empty{color:#8a96a3;font-family:var(--f-ui);font-size:.85em;text-indent:0}
+.paper .passage p.verse{text-indent:0;padding-left:2em}
+.paper .passage p.note{text-indent:0;font-size:.85em;margin-top:.3em}
+.paper .plabel{margin:.5em 0 .1em -1.67em}
+.paper .plabel .lab{display:inline-block;border:1px solid currentColor;padding:0 .25em;line-height:1.3}
+.paper .xt{border-collapse:collapse;width:auto;max-width:100%;margin:.4em 0;font-size:1em}
+.paper .xt th,.paper .xt td{border:1px solid #444;padding:.2em .5em;white-space:normal;vertical-align:top;color:inherit;background:none;letter-spacing:0;font-size:1em;text-align:left}
+.paper .xt th{font-weight:700}
+.paper .fig{margin:.5em 0;text-align:center}
+.paper .fig img{max-width:100%;height:auto}
+.paper .fig figcaption{font-size:.85em}
 .paper .q{position:relative;padding-left:1.67em;margin-top:.15em}
 .paper .qno{position:absolute;left:0;top:0}
-.paper .q .flag{position:absolute;top:.05em;left:100%;margin-left:.4em;font-family:var(--f-ui);font-size:.64em;line-height:1.5;white-space:nowrap;
-  border:1px solid #b9c3cc;border-radius:999px;background:#fff;color:#5d6b78;padding:0 .7em;cursor:pointer}
-.paper .q .flag::before{content:"⚑ "}
-.paper .q .flag:hover{border-color:#c26a00;color:#c26a00}
-.paper .q .flag[aria-pressed="true"]{background:#c26a00;border-color:#c26a00;color:#fff;font-weight:500}
-.paper .q .flag:focus-visible{outline:2px solid #1f5f7a;outline-offset:2px}
-@container (max-width:560px){.paper .q .flag{position:static;margin:.2em 0}}
-.paper .stem{margin:0}
+@container (max-width:560px){.paper .stem{margin:0}
 .paper .opts{display:grid;gap:0 1em}
 .paper .opts.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .paper .opts.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -138,7 +136,7 @@ button.cell:hover{border-color:var(--ink)}
 @media (max-width:700px){.paper{padding:1.4em 1.2em 1.8em}}
 .hl-zone{user-select:text;-webkit-user-select:text}
 .ch.hl{background:var(--mark);color:var(--mark-ink)}
-.set-screen .taskbar{max-width:calc(42.5em*17/15 + 7.2em*17/15);margin-left:auto;margin-right:auto}
+.set-screen .taskbar{max-width:calc(42.5em*17/15 + 6em*17/15);margin-left:auto;margin-right:auto}
 
 /* effort scale */
 .scale{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px}
