@@ -136,14 +136,17 @@ function renderTestLinks() {
   if (!box) return;
   const key = APP_CONFIG.TEST_KEY;
   if (!key) { box.innerHTML = ""; return; }
-  const url = b => `index.html?test=${encodeURIComponent(key)}${b ? "&booklet=" + encodeURIComponent(b) : ""}`;
+  const url = b => `index.html?test=${encodeURIComponent(key)}&booklet=${encodeURIComponent(b)}`;
   const formal = booklets().filter(b => b !== PRACTICE_BOOKLET);
   box.innerHTML = `<h3>測試受試者頁</h3>
+    <p class="hint"><button class="linkbtn" type="button" id="clearDone">清除這台電腦的作答紀錄</button> <span id="clearDoneMsg"></span></p>
     <p class="hint">用這些連結開啟的受試者頁不會擋重複作答，作答資料會標記為「測試」，不納入分析。<b>不要把這些連結給受試者。</b></p>
-    <div class="tools"><a class="tool" href="${url("")}" target="_blank" rel="noopener">隨機題本</a>
-      ${formal.map(b => `<a class="tool" href="${url(b)}" target="_blank" rel="noopener">題本 ${esc(b)}</a>`).join("")}</div>
-    <p class="hint">在某台電腦被擋在「你已經完成過本研究」時，在那台電腦開啟：
-      <a href="index.html?reset=${encodeURIComponent(key)}" target="_blank" rel="noopener">清除這台電腦的作答紀錄</a></p>`;
+    <div class="tools">${formal.map(b => `<a class="tool" href="${url(b)}" target="_blank" rel="noopener">題本 ${esc(b)}</a>`).join("")}</div>`;
+  // 與受試者頁同網域，直接清除「已完成」紀錄（participant.js 的 DONE_KEY）；回到受試者頁重新整理即可
+  $("#clearDone").onclick = () => {
+    try { localStorage.removeItem("nstc_done"); } catch (e) {}
+    $("#clearDoneMsg").textContent = "已清除，回到受試者頁重新整理即可。";
+  };
 }
 
 let pvTimer = null;
