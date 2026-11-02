@@ -126,6 +126,7 @@ const CHUNK = 45000;
 /* ---------- 初次設定：建立工作表、標題列、格式與說明 ---------- */
 function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  writeGuide(ss);   // 先建立「說明」，下面排序工作表時位置才不會超出範圍
   Object.keys(SHEETS).forEach((name, i) => {
     const def = SHEETS[name], n = def.cols.length;
     let sh = ss.getSheetByName(def.title);
@@ -153,7 +154,7 @@ function setup() {
     }
     ss.setActiveSheet(sh); ss.moveActiveSheet(i + 2);
   });
-  writeGuide(ss);
+  ss.setActiveSheet(ss.getSheetByName(GUIDE));
   if (!PropertiesService.getScriptProperties().getProperty("ADMIN_KEY")) {
     Logger.log("提醒：請到「專案設定 → 指令碼屬性」新增 ADMIN_KEY（管理密碼）。");
   }
