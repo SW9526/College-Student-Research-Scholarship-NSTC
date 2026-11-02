@@ -274,6 +274,16 @@
         update();
         if (isFormal) saveState();
       });
+      // 再點一次已選的選項＝取消選取（點已選的單選鈕不會觸發 change，只有 click）
+      screenEl.addEventListener("click", e => {
+        const r = e.target;
+        if (r.type !== "radio" || s.responses[r.name] !== r.value) return;
+        r.checked = false;
+        delete s.responses[r.name];
+        s.ansLog.push({ t: Math.round(performance.now() - t0), item: r.name, value: "" });
+        update();
+        if (isFormal) saveState();
+      });
       app.querySelector("[data-done]").addEventListener("click", () => {
         // 頁面內的確認視窗（不用瀏覽器的 confirm）；開著的時間仍算在這個題組
         const holder = document.createElement("div");
