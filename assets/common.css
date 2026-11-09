@@ -123,6 +123,8 @@ mark.todo{background:var(--flag-soft);color:var(--warn);border-radius:3px;paddin
 .paper .q{position:relative;padding-left:1.67em;margin-top:.15em}
 .paper .qno{position:absolute;left:0;top:0}
 .paper .stem{margin:0}
+/* 試題本的題幹與選項是新細明體（文章是標楷體）；Mac 沒有新細明體時用內建的宋體 */
+.paper .stem,.paper .opt{font-family:"Times New Roman","PMingLiU","新細明體","Songti TC","Noto Serif TC",serif}
 .paper .opts{display:grid;gap:0 1em}
 .paper .opts.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .paper .opts.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
