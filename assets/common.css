@@ -105,7 +105,8 @@ mark.todo{background:var(--flag-soft);color:var(--warn);border-radius:3px;paddin
   max-width:calc(42.5em + 6em);margin:0 auto;padding:2.2em 3em 2.6em;
   font-family:"Times New Roman","DFKai-SB","BiauKai","標楷體","TW-Kai","LXGW WenKai TC","Kaiti TC",serif;line-height:1.55;text-align:justify}
 .paper .src{font-family:var(--f-ui);font-size:.75em;color:var(--warn);margin-bottom:.6em}
-.paper .grp{margin:0 0 .15em}
+/* 題組說明在試題本是細明體 */
+.paper .grp{margin:0 0 .15em;font-family:"Times New Roman","MingLiU","細明體","PMingLiU","新細明體","Songti TC","Noto Serif TC",serif}
 .paper .grp .u{text-decoration:underline;text-underline-offset:.18em}
 .paper .passage{padding-left:1.67em;margin-bottom:.15em}
 .paper .passage p{text-indent:2em;margin:0}
@@ -125,6 +126,8 @@ mark.todo{background:var(--flag-soft);color:var(--warn);border-radius:3px;paddin
 .paper .stem{margin:0}
 /* 試題本的題幹與選項是新細明體（文章是標楷體）；Mac 沒有新細明體時用內建的宋體 */
 .paper .stem,.paper .opt{font-family:"Times New Roman","PMingLiU","新細明體","Songti TC","Noto Serif TC",serif}
+/* ~~文字~~：題幹、選項中引用文章的字詞，試題本用標楷體 */
+.paper .kai{font-family:"Times New Roman","DFKai-SB","BiauKai","標楷體","TW-Kai","LXGW WenKai TC","Kaiti TC",serif}
 .paper .opts{display:grid;gap:0 1em}
 .paper .opts.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .paper .opts.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}

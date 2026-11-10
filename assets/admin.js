@@ -199,7 +199,7 @@ function renderEditor() {
     <label class="f"><span>文章</span><textarea id="f_passage" rows="12">${esc(passageToText(set.passage))}</textarea>
       <span class="hint">段落之間空一行。沒勾「保留換行」時，從 PDF 貼上的段落內換行會自動合併。<br>
       標記：<code>__文字__</code> 底線、<code>**文字**</code> 粗體、段落開頭 <code>【甲】</code> 多文本標籤、段落開頭 <code>注：</code> 注釋、
-      每行以 <code>|</code> 開頭為表格（<code>| 格 | 格 |</code>，格子開頭加 <code>!</code> 為標題格）、圖片用下方按鈕插入。題幹與選項也可以用底線、粗體。</span></label>
+      每行以 <code>|</code> 開頭為表格（<code>| 格 | 格 |</code>，格子開頭加 <code>!</code> 為標題格）、圖片用下方按鈕插入。題幹與選項也可以用底線、粗體；題幹或選項中引用文章的字詞用 <code>~~文字~~</code> 顯示為標楷體（和試題本一樣）。</span></label>
     <div class="actions"><label class="btn ghost small"><input type="file" id="f_img" accept="image/*" hidden>插入圖片</label>
       <span class="hint">圖片會縮到最寬 1200px 後存進試算表，並在文章游標處插入 <code>![圖說](img:代號)</code>。</span></div>
     <div id="itemEds" style="display:grid;gap:10px"></div>

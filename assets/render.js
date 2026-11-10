@@ -1,9 +1,10 @@
 /* 題組畫面：受試者頁與管理者預覽共用同一份程式，確保兩邊看到的完全一樣。
-   版面依學測國綜試題本：單欄、文章標楷體、題幹與選項新細明體、英數字 Times New Roman、題組說明加底線、文章整段縮排、題號凸排、選項依長度排成 4／2／1 欄。
+   版面依學測國綜試題本：單欄、文章標楷體、題幹與選項新細明體、英數字 Times New Roman、題組說明細明體加底線、文章整段縮排、題號凸排、選項依長度排成 4／2／1 欄。
 
    文章、題幹、選項可用的標記（管理者頁輸入）：
      __文字__        畫底線（例如「上文畫線處」）
      **文字**        粗體
+     ~~文字~~        標楷體（題幹、選項中引用文章的字詞，例如「~~臺灣杉~~」）
      段落開頭【甲】   甲、乙、丙等多文本的標籤；只寫【甲】一行則標籤單獨成行
      段落開頭 注：    注釋，以小字顯示
      | 格 | 格 |    表格：段落的每一行都以 | 開頭；格子內容以 ! 開頭為標題格
@@ -12,20 +13,25 @@
 const KEYS = ["A", "B", "C", "D"];
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-/* 行內標記 → [{ch, u, b}]；__ 與 ** 只是開關，不算字 */
+/* 行內標記 → [{ch, u, b, k}]；__、**、~~ 只是開關，不算字 */
 function tokens(s) {
   const out = [], str = String(s ?? "");
-  let u = false, b = false;
+  let u = false, b = false, k = false;
   for (let i = 0; i < str.length; i++) {
     if (str.startsWith("__", i)) { u = !u; i++; continue; }
     if (str.startsWith("**", i)) { b = !b; i++; continue; }
+    if (str.startsWith("~~", i)) { k = !k; i++; continue; }
     const cp = str.codePointAt(i), ch = String.fromCodePoint(cp);
     if (cp > 0xffff) i++;
-    out.push({ ch, u, b });
+    out.push({ ch, u, b, k });
   }
   return out;
 }
-const wrap = (t, html) => (t.u ? `<u>${t.b ? `<b>${html}</b>` : html}</u>` : t.b ? `<b>${html}</b>` : html);
+const wrap = (t, html) => {
+  if (t.k) html = `<span class="kai">${html}</span>`;
+  if (t.b) html = `<b>${html}</b>`;
+  return t.u ? `<u>${html}</u>` : html;
+};
 /* 可畫重點的文字：每個字一個 span（data-z 區塊、data-i 第幾個字）；換行 → <br> */
 function chars(s, zone) {
   let i = 0;
