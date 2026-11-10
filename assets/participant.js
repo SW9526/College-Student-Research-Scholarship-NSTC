@@ -151,14 +151,16 @@
   const stepsEl = document.getElementById("steps");
   let preStage = "consent";
   const drawSteps = () => {
+    const stage = !S ? preStage : ["set", "effort"].includes(S.stage) ? "set" + S.cur : ["finishing", "done"].includes(S.stage) ? "end" : S.stage;
+    // 只有正式作答時展開成題組 1、2、3…；作答前後都收成一個「題組」（不透露題組數，題組多時也不雜亂）
+    const started = /^set\d/.test(stage);
     const n = sets.length || (Number(V.N_SETS) || 0);
     const list = [["consent", "同意"], ["background", "背景"], ["instructions", "說明"], ["practice", "練習"],
-      ...Array.from({ length: n }, (_, k) => ["set" + k, `題組 ${k + 1}`]), ["post", "回饋"]];
-    const stage = !S ? preStage : ["set", "effort"].includes(S.stage) ? "set" + S.cur : ["finishing", "done"].includes(S.stage) ? "end" : S.stage;
+      ...(started ? Array.from({ length: n }, (_, k) => ["set" + k, `題組 ${k + 1}`]) : [["sets", "題組"]]), ["post", "回饋"]];
     const at = stage === "end" ? list.length : list.findIndex(([k]) => k === stage);
     stepsEl.innerHTML = list.map(([k, label], i) => {
       const cls = i < at ? "done" : i === at ? "current" : "todo";
-      const mark = k.startsWith("set") ? String(+k.slice(3) + 1) : i < at ? "✓" : "";
+      const mark = /^set\d/.test(k) ? String(+k.slice(3) + 1) : i < at ? "✓" : "";
       return `<li class="step ${cls}"><span class="dot"${i === at ? ' aria-current="step"' : ""}>${mark}</span><span class="lbl">${esc(label)}</span></li>`;
     }).join("");
     updateFsBar(); tick();
