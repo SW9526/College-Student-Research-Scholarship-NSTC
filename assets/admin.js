@@ -359,7 +359,7 @@ const FILTERS = [
   { k: "SaveFail", short: () => "部分資料未能儲存", label: () => "部分資料未能儲存", desc: "網路問題導致部分作答資料沒有上傳成功，資料不完整。" },
   { k: "Honest", short: () => "自評未獨立作答", label: () => "自評未獨立作答", desc: "結尾問卷自評有查資料或請人協助。預設不排除，可視需要勾選。" }
 ];
-const DATA_OPEN = new Set();   // 記住「排除條件」「詳細資料」是否展開（調整條件時畫面會重畫）
+const DATA_OPEN = new Set(["filters"]);   // 記住「排除條件」「詳細資料」是否展開（調整條件時畫面會重畫）；排除條件預設展開
 const isTest = s => s.is_test === true || s.is_test === "TRUE" || s.is_test === "true";
 // 參加學測的年度與施測試題相同（例如預試時勾選 114 或 115 學年度）
 const tookItemYear = s => (String(s.exam_year || "").match(/\d{3}/g) || []).map(Number).some(y => YEARS.includes(y));
@@ -442,15 +442,6 @@ function renderData() {
   const kpi = (n, label, note) => `<div class="kpi"><b>${n}</b><span>${label}</span>${note ? `<small>${note}</small>` : ""}</div>`;
   const dlItem = (id, name, desc) => `<li><button class="btn ghost small" id="${id}" type="button">${name}</button><span class="muted">${desc}</span></li>`;
   $("#view-data").innerHTML = `
-    <div class="howto">
-      <strong>怎麼使用這一頁</strong>
-      <ol>
-        <li>看「總覽」確認收到多少份資料、各題本人數是否接近。</li>
-        <li>需要時展開「排除條件」，決定哪些受試者不納入分析（預設已勾選建議的條件）。</li>
-        <li>按「下載分析用資料」取得逐題作答資料；試題分析、受試者名單與其他檔案在最下方「詳細資料」。</li>
-      </ol>
-    </div>
-
     <h2>總覽</h2>
     <div class="kpis">
       ${kpi(completed.length, "已完成")}
